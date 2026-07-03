@@ -170,6 +170,12 @@
 </head>
 <body>
 
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay" style="display:none;position:fixed;inset:0;background:rgba(245,243,250,0.85);z-index:999;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+  <div style="width:40px;height:40px;border:4px solid #D6CEEA;border-top-color:#7B3FA0;border-radius:50%;animation:spin .8s linear infinite"></div>
+  <div style="font-family:'Nunito',sans-serif;font-weight:700;color:#7B3FA0;font-size:15px" id="loading-text">Carregando...</div>
+</div>
+
 <!-- HOME -->
 <div id="home" class="screen active">
   <div class="home-wrap">
@@ -360,6 +366,107 @@
 </div>
 
 <script>
+
+// ── SUPABASE CONFIG ──────────────────────────────────
+const SB_URL = 'https://gfrluwtkdmumgpthhhpn.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmcmx1d3RrZG11bWdwdGhoaHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzUxNzMsImV4cCI6MjA5ODY1MTE3M30.Sb-WgBG8aceNwE3a63si53BzSg3TV6SYXjViYJZkqO4';
+
+async function sbGet(table, filters='') {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filters}`, {
+    headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY}
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function sbPost(table, data) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY,
+               'Content-Type': 'application/json', 'Prefer': 'return=representation'},
+    body: JSON.stringify(data)
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function sbPatch(table, filters, data) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filters}`, {
+    method: 'PATCH',
+    headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY,
+               'Content-Type': 'application/json', 'Prefer': 'return=representation'},
+    body: JSON.stringify(data)
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ── ESTADO LOCAL (cache) ──────────────────────────────
+let _cache = {av: null, resp: [], lastFetch: 0};
+
+async function gs() {
+  // Always fetch fresh data (no cache)
+  await refreshCache();
+  return _cache;
+}
+
+async function refreshCache() {
+  try {
+    // Get most recent avaliacao (active or not)
+    const avs = await sbGet('avaliacoes', 'order=criada_em.desc&limit=1');
+    _cache.av = avs.length ? {
+      id: avs[0].id,
+      lider: avs[0].lider,
+      email: avs[0].lider_email,
+      itens: avs[0].itens,
+      ativa: avs[0].ativa
+    } : null;
+    // Get all respostas
+    const resps = await sbGet('respostas', 'order=criada_em.asc');
+    _cache.resp = resps.map(r => ({
+      email: r.avaliador_email,
+      liderEmail: r.lider_email,
+      notas: r.notas,
+      just: r.justificativa,
+      sug: r.sugestoes,
+      data: new Date(r.criada_em).toLocaleString('pt-BR')
+    }));
+    _cache.lastFetch = Date.now();
+    console.log('[Supabase] OK - avaliacao:', _cache.av?.lider||'nenhuma', '| respostas:', _cache.resp.length);
+  } catch(e) {
+    console.error('[Supabase] Erro ao conectar:', e.message);
+    throw e;
+  }
+}
+
+async function ss_ativar(lider, email, itens) {
+  // Encerra avaliacao anterior se existir
+  await sbPatch('avaliacoes', 'ativa=eq.true', {ativa: false});
+  // Cria nova
+  const rows = await sbPost('avaliacoes', {
+    lider, lider_email: email, itens, ativa: true
+  });
+  _cache.av = {id: rows[0].id, lider, email, itens, ativa: true};
+  _cache.lastFetch = 0;
+}
+
+async function ss_encerrar() {
+  if(!_cache.av) return;
+  await sbPatch('avaliacoes', 'ativa=eq.true', {ativa: false});
+  _cache.av.ativa = false;
+  _cache.lastFetch = 0;
+}
+
+async function ss_salvarResposta(avaliadorEmail, liderEmail, notas, just, sug) {
+  await sbPost('respostas', {
+    avaliacao_id: _cache.av?.id,
+    lider_email: liderEmail,
+    avaliador_email: avaliadorEmail,
+    notas, justificativa: just, sugestoes: sug
+  });
+  _cache.lastFetch = 0;
+}
+
 // ── DADOS FIXOS ──────────────────────────────────────
 const PESSOAS = [
   {nome:"BEATRIZ DE PAULA SUAVE",       email:"beatriz.suave@levnegocios.com.br"},
@@ -382,26 +489,30 @@ const PESSOAS = [
 ];
 const ADMIN_PW = 'admin123';
 
-// ── ESTADO ───────────────────────────────────────────
-function gs(){return JSON.parse(localStorage.getItem('lev2')||'{}')}
-function ss(d){localStorage.setItem('lev2',JSON.stringify(d))}
-function initS(){const s=gs();if(!s.av)s.av=null;if(!s.resp)s.resp=[];ss(s)}
-initS();
+// ── INIT ─────────────────────────────────────────────
+refreshCache(); // load data on startup
 
 // ── NAVEGAÇÃO ────────────────────────────────────────
-function goTo(id){
+async function goTo(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  if(id==='admin-painel'){syncAdmin();renderDash();renderExp()}
+  if(id==='admin-painel'){
+    showLoading('Carregando painel...');
+    await refreshCache();
+    await syncAdmin();
+    await renderDash();
+    await renderExp();
+    hideLoading();
+  }
 }
-function swTab(id){
+async function swTab(id){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tp').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   const idx=['tc','td','te'].indexOf(id);
   document.querySelectorAll('.tab')[idx].classList.add('active');
-  if(id==='td')renderDash();
-  if(id==='te')renderExp();
+  if(id==='td'){await refreshCache();renderDash();}
+  if(id==='te'){await refreshCache();renderExp();}
 }
 
 // ── ADMIN LOGIN ──────────────────────────────────────
@@ -446,9 +557,9 @@ function renderItens(){
   document.getElementById('ic-badge').textContent=adminItens.filter(x=>x.trim()).length+' / 4';
 }
 
-function syncAdmin(){
+async function syncAdmin(){
   buildSelect();
-  const s=gs();
+  const s=await gs();
   if(s.av){
     document.getElementById('sel-lider').value='';
     adminItens=[...s.av.itens];
@@ -486,13 +597,13 @@ function syncAdmin(){
 let _pendingIdx=null;
 let _pendingItens=null;
 
-function ativar(){
+async function ativar(){
   const idx=document.getElementById('sel-lider').value;
   if(idx==='')return msg('cfg-msg','err','Selecione o líder a ser avaliado.');
   const itens=adminItens.filter(x=>x.trim());
   if(itens.length<1)return msg('cfg-msg','err','Adicione pelo menos 1 critério de avaliação.');
 
-  const s=gs();
+  const s=await gs();
   // Se já existe avaliação ATIVA, abre o modal de confirmação
   if(s.av && s.av.ativa){
     _pendingIdx=idx;
@@ -506,7 +617,7 @@ function ativar(){
     return;
   }
   // Sem avaliação ativa — pode ativar direto
-  _executarAtivacao(idx, itens);
+  await _executarAtivacao(idx, itens);
 }
 
 function fecharModal(){
@@ -514,36 +625,35 @@ function fecharModal(){
   _pendingIdx=null; _pendingItens=null;
 }
 
-function confirmarSobrescrever(){
+async function confirmarSobrescrever(){
   document.getElementById('modal-sobrescrever').style.display='none';
-  // Encerra a avaliação atual (salva na base — as respostas já estão salvas em s.resp)
-  const s=gs();
-  if(s.av) s.av.ativa=false;
-  ss(s);
-  _executarAtivacao(_pendingIdx, _pendingItens);
+  await ss_encerrar();
+  await _executarAtivacao(_pendingIdx, _pendingItens);
   _pendingIdx=null; _pendingItens=null;
 }
 
-function _executarAtivacao(idx, itens){
+async function _executarAtivacao(idx, itens){
   const p=PESSOAS[idx];
-  const s=gs();
-  s.av={lider:p.nome,email:p.email,itens,ativa:true};
-  ss(s);
-  syncAdmin();
-  msg('cfg-msg','ok',`✅ Avaliação de <strong>${toTitle(p.nome)}</strong> ativada! Os avaliadores já podem responder.`);
+  try{
+    await ss_ativar(p.nome, p.email, itens);
+    await syncAdmin();
+    msg('cfg-msg','ok',`✅ Avaliação de <strong>${toTitle(p.nome)}</strong> ativada! Os avaliadores já podem responder.`);
+  }catch(e){
+    msg('cfg-msg','err','Erro ao salvar no banco: '+e.message);
+  }
 }
 
-function encerrar(){
-  const s=gs();
+async function encerrar(){
+  const s=await gs();
   if(!s.av)return msg('cfg-msg','err','Nenhuma avaliação ativa.');
-  s.av.ativa=false; ss(s);
-  syncAdmin();
+  await ss_encerrar();
+  await syncAdmin();
   msg('cfg-msg','warn','🔒 Avaliação encerrada. Novos avaliadores não conseguem mais responder.');
 }
 
 // ── DASHBOARD ────────────────────────────────────────
-function renderDash(){
-  const s=gs();
+async function renderDash(){
+  const s=await gs();
   const el=document.getElementById('dash-content');
   if(!s.resp||s.resp.length===0){
     el.innerHTML=`<div class="empty"><div class="ic">📭</div><strong>Nenhuma avaliação respondida ainda</strong><p>Os resultados aparecerão aqui assim que os avaliadores enviarem.</p></div>`;
@@ -618,8 +728,8 @@ function renderDash(){
 }
 
 // ── EXPORTAR ─────────────────────────────────────────
-function renderExp(){
-  const s=gs();
+async function renderExp(){
+  const s=await gs();
   const el=document.getElementById('exp-tbl');
   if(!s.resp||!s.resp.length){el.innerHTML='<p style="color:var(--muted);font-size:14px">Nenhum dado para exportar.</p>';return}
   const itens=[...new Set(s.resp.flatMap(r=>Object.keys(r.notas||{})))];
@@ -634,8 +744,8 @@ function renderExp(){
   </tbody></table>`;
 }
 
-function exportCSV(){
-  const s=gs();
+async function exportCSV(){
+  const s=await gs();
   if(!s.resp||!s.resp.length)return;
   const itens=[...new Set(s.resp.flatMap(r=>Object.keys(r.notas||{})))];
   const heads=['Líder Avaliado','Avaliador','Data',...itens,'Média','Justificativa','Sugestões'];
@@ -653,10 +763,18 @@ function exportCSV(){
 
 // ── AVALIADOR LOGIN ───────────────────────────────────
 let avalEmail='';
-function doAvalLogin(){
+async function doAvalLogin(){
   const email=document.getElementById('aval-email').value.trim().toLowerCase();
   const err=document.getElementById('aval-err');
-  const s=gs();
+  err.style.display='none';
+  document.getElementById('aval-email').disabled=true;
+  document.querySelector('#aval-login .btn-p').disabled=true;
+  document.querySelector('#aval-login .btn-p').textContent='Verificando...';
+  await refreshCache();
+  document.getElementById('aval-email').disabled=false;
+  document.querySelector('#aval-login .btn-p').disabled=false;
+  document.querySelector('#aval-login .btn-p').textContent='Acessar Avaliação';
+  const s=_cache;
 
   if(!email||!email.includes('@')){err.style.display='block';err.textContent='Informe um e-mail válido.';return}
 
@@ -706,31 +824,37 @@ function setNota(item,nota,idx){
   const l=document.getElementById(`rl-${idx}`);if(l)l.textContent=`${nota}/5 — ${RL[nota]}`;
 }
 
-function salvar(){
-  const s=gs();
+async function salvar(){
+  const s=_cache;
   const falta=s.av.itens.filter(i=>!avalNotas[i]);
   if(falta.length){document.getElementById('aval-msg').innerHTML=`<div class="notice n-err">Avalie todos os critérios antes de salvar. Faltam: <strong>${falta.join(', ')}</strong></div>`;return}
-  s.resp.push({
-    email:avalEmail,
-    liderEmail:s.av.email,
-    notas:{...avalNotas},
-    just:document.getElementById('aval-just').value.trim(),
-    sug:document.getElementById('aval-sug').value.trim(),
-    data:new Date().toLocaleString('pt-BR')
-  });
-  ss(s);
+  const just=document.getElementById('aval-just').value.trim();
+  const sug=document.getElementById('aval-sug').value.trim();
   document.getElementById('btn-salvar').disabled=true;
-  document.getElementById('aval-msg').innerHTML=`<div class="success"><div class="ic">✅</div><h3>Avaliação salva com sucesso!</h3><p>Obrigado, <strong>${avalEmail}</strong>. Sua avaliação foi registrada.</p></div>`;
-  document.getElementById('aval-itens').innerHTML='';
-  document.querySelectorAll('#aval-just,#aval-sug').forEach(el=>el.value='');
+  document.getElementById('btn-salvar').textContent='Salvando...';
+  try{
+    await ss_salvarResposta(avalEmail, s.av.email, {...avalNotas}, just, sug);
+    document.getElementById('aval-msg').innerHTML=`<div class="success"><div class="ic">✅</div><h3>Avaliação salva com sucesso!</h3><p>Obrigado, <strong>${avalEmail}</strong>. Sua avaliação foi registrada.</p></div>`;
+    document.getElementById('aval-itens').innerHTML='';
+    document.querySelectorAll('#aval-just,#aval-sug').forEach(el=>el.value='');
+  }catch(e){
+    document.getElementById('btn-salvar').disabled=false;
+    document.getElementById('btn-salvar').textContent='💾 Salvar Avaliação';
+    document.getElementById('aval-msg').innerHTML=`<div class="notice n-err">Erro ao salvar. Verifique sua conexão e tente novamente.</div>`;
+  }
 }
 
 // ── RESULTADO: LOGIN ─────────────────────────────────
 let resEmail='';
-function doResultLogin(){
+async function doResultLogin(){
   const email=document.getElementById('res-email').value.trim().toLowerCase();
   const err=document.getElementById('res-err');
-  const s=gs();
+  document.querySelector('#resultado-login .btn-g').disabled=true;
+  document.querySelector('#resultado-login .btn-g').textContent='Buscando...';
+  await refreshCache();
+  document.querySelector('#resultado-login .btn-g').disabled=false;
+  document.querySelector('#resultado-login .btn-g').textContent='Ver meu resultado';
+  const s=_cache;
   if(!email||!email.includes('@')){err.style.display='block';err.textContent='Informe um e-mail válido.';return}
   const pessoa=PESSOAS.find(p=>p.email===email);
   if(!pessoa){err.style.display='block';err.textContent='E-mail não encontrado na base. Verifique e tente novamente.';return}
@@ -850,33 +974,61 @@ Produza uma análise com EXATAMENTE estas 3 seções, usando os títulos em negr
 
 Seja direto. Use frases curtas. Tom positivo e profissional. Não repita os números das notas — foque na interpretação qualitativa.`;
 
+  // Gera análise local com base nos dados sem precisar de API externa
   try {
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:1000,
-        messages:[{role:'user',content:prompt}]
-      })
-    });
-    const data=await resp.json();
-    const texto=data.content?.find(b=>b.type==='text')?.text||'';
-    if(!texto)throw new Error('sem resposta');
+    const mediaNum = parseFloat(mediaGeral);
+    let classificacao = '';
+    let pontosFortesTexto = '';
+    let melhoriaTexto = '';
+    let proximosPassosTexto = '';
 
-    // Renderiza markdown simples (negrito e quebras)
-    const html=texto
-      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-      .replace(/\n\n/g,'</p><p>')
-      .replace(/\n/g,'<br>');
+    if(mediaNum >= 4.5) classificacao = 'excelente';
+    else if(mediaNum >= 3.5) classificacao = 'boa';
+    else if(mediaNum >= 2.5) classificacao = 'regular';
+    else classificacao = 'abaixo do esperado';
 
-    cardIA.querySelector('.badge').textContent='Análise IA';
+    // Melhor e pior critério
+    const sorted = [...mediasPorItem].filter(x=>x.media!=='—').sort((a,b)=>parseFloat(b.media)-parseFloat(a.media));
+    const melhor = sorted[0];
+    const pior = sorted[sorted.length-1];
+
+    pontosFortesTexto = melhor
+      ? `<strong>✅ Pontos Fortes</strong><br>Seu desempenho geral é <strong>${classificacao}</strong>, com média de <strong>${mediaGeral}/5</strong>. `
+        + `O critério de maior destaque é <strong>${melhor.item}</strong> (${melhor.media}/5), mostrando que você já possui uma base sólida nessa competência. `
+        + (justificativas.length ? `Os avaliadores reconhecem seu esforço e dedicação — veja os feedbacks completos abaixo para mais detalhes.` : '')
+      : '';
+
+    melhoriaTexto = pior && sorted.length > 1
+      ? `<strong>🎯 Oportunidades de Melhoria</strong><br>O critério <strong>${pior.item}</strong> (${pior.media}/5) apresenta maior espaço para desenvolvimento. `
+        + `Isso não é um ponto negativo — é uma oportunidade valiosa de crescimento profissional. `
+        + (sugestoes.length ? `Seus avaliadores deixaram sugestões concretas que podem te ajudar nessa jornada — confira na seção abaixo.` : '')
+      : '';
+
+    proximosPassosTexto = `<strong>🚀 Próximos Passos Sugeridos</strong><br>`
+      + `1. Leia com atenção cada justificativa e sugestão deixada pelos avaliadores — são insumos valiosos para seu desenvolvimento.<br>`
+      + `2. Converse com seu gestor sobre os pontos levantados e construa um plano de ação conjunto.<br>`
+      + `3. Estabeleça metas de curto prazo focadas nos critérios com maior oportunidade de melhoria.`;
+
+    const htmlResult = [pontosFortesTexto, melhoriaTexto, proximosPassosTexto]
+      .filter(Boolean).join('<br><br>');
+
+    cardIA.querySelector('.badge').textContent='Análise';
     cardIA.querySelector('.badge').className='badge';
-    iaEl.innerHTML=`<p style="line-height:1.8">${html}</p>`;
+    iaEl.innerHTML=`<div style="line-height:1.9;font-size:14px">${htmlResult}</div>`;
   } catch(e){
-    iaEl.innerHTML=`<div class="notice n-warn">Não foi possível gerar a análise automática agora. Mas você pode consultar os feedbacks escritos abaixo.</div>`;
-    cardIA.querySelector('.badge').remove();
+    iaEl.innerHTML=`<div class="notice n-warn">Não foi possível gerar a análise agora. Consulte os feedbacks escritos abaixo.</div>`;
+    if(cardIA.querySelector('.badge')) cardIA.querySelector('.badge').remove();
   }
+}
+
+// ── LOADING ──────────────────────────────────────────
+function showLoading(txt='Carregando...'){
+  const el=document.getElementById('loading-overlay');
+  document.getElementById('loading-text').textContent=txt;
+  el.style.display='flex';
+}
+function hideLoading(){
+  document.getElementById('loading-overlay').style.display='none';
 }
 
 // ── HELPERS ───────────────────────────────────────────
