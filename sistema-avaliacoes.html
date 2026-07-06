@@ -1219,11 +1219,16 @@ async function confirmarLimpar(){
     });
     if(!r2.ok) throw new Error(await r2.text());
 
+    // Zera cache completamente e força busca no banco
     _cache = {av:null, resp:[], lastFetch:0};
+    await refreshCache();
     hideLoading();
     await syncAdmin();
     await renderDash();
     await renderExp();
+    // Força re-render do dashboard visualmente
+    document.getElementById('dash-content').innerHTML='';
+    await renderDash();
     msg('cfg-msg','ok','✅ Base de dados limpa com sucesso! O sistema está pronto para o ciclo real.');
     swTab('tc');
   }catch(e){
