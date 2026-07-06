@@ -261,6 +261,17 @@
         <button class="btn btn-d" onclick="encerrar()">🔒 Encerrar Avaliação</button>
       </div>
       <div id="cfg-msg" style="margin-top:16px"></div>
+
+      <hr style="margin:32px 0">
+
+      <div class="card" style="border:2px solid var(--danger);background:var(--danger-l)">
+        <div class="ctitle" style="font-size:15px;color:var(--danger)">🗑️ Limpar Base de Dados</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+          Remove <strong>todas</strong> as avaliações e respostas armazenadas no banco. Use antes de iniciar o ciclo real, após os testes.
+          <br><strong style="color:var(--danger)">Esta ação é irreversível.</strong>
+        </p>
+        <button class="btn btn-d btn-sm" onclick="abrirModalLimpar()">🗑️ Limpar toda a base</button>
+      </div>
     </div>
 
     <!-- DASHBOARD -->
@@ -361,6 +372,26 @@
     <div class="mbtns">
       <button class="btn btn-s" onclick="fecharModal()">⏳ Aguardar — manter atual</button>
       <button class="btn btn-d" onclick="confirmarSobrescrever()">🔄 Encerrar e iniciar nova</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LIMPAR BASE -->
+<div id="modal-limpar" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="mic">⚠️</div>
+    <h3>Limpar toda a base?</h3>
+    <p>Essa ação vai apagar <strong>permanentemente</strong> todas as avaliações e respostas salvas no banco de dados.</p>
+    <div class="minfo" style="background:var(--danger-l);border-color:var(--danger);color:var(--danger)">
+      Esta operação <strong>não pode ser desfeita</strong>. Certifique-se de ter exportado os dados antes, se necessário.
+    </div>
+    <p style="margin-top:8px">Para confirmar, digite <strong>LIMPAR</strong> no campo abaixo:</p>
+    <input type="text" id="limpar-confirm-input" placeholder="Digite LIMPAR para confirmar"
+      style="margin-top:12px;border-color:var(--danger)"
+      oninput="document.getElementById('btn-confirmar-limpar').disabled=this.value!=='LIMPAR'">
+    <div class="mbtns">
+      <button class="btn btn-s" onclick="fecharModalLimpar()">Cancelar</button>
+      <button class="btn btn-d" id="btn-confirmar-limpar" onclick="confirmarLimpar()" disabled>🗑️ Sim, limpar tudo</button>
     </div>
   </div>
 </div>
