@@ -210,7 +210,7 @@
     <div class="field"><label>Senha</label><input type="password" id="apw" placeholder="••••••••" onkeydown="if(event.key==='Enter')doAdminLogin()"></div>
     <div id="apw-err" class="notice n-err" style="display:none">Senha incorreta.</div>
     <button class="btn btn-p btn-full" onclick="doAdminLogin()">Entrar</button>
-    <p style="font-size:12px;color:var(--muted);margin-top:14px;text-align:center">Senha padrão: <strong>admin123</strong></p>
+    
   </div>
 </div>
 
@@ -808,26 +808,54 @@ function renderAvalForm(av){
   document.getElementById('aval-msg').innerHTML='';
   const c=document.getElementById('aval-itens');
   c.innerHTML=av.itens.map((item,i)=>`
-    <div class="eitem">
+    <div class="eitem" id="eitem-${i}">
       <div class="eitem-title"><span style="display:inline-flex;width:24px;height:24px;background:var(--purple);color:#fff;border-radius:50%;font-size:12px;font-weight:700;align-items:center;justify-content:center;margin-right:8px">${i+1}</span>${esc(item)}</div>
       <div class="stars" id="stars-${i}">
         ${[1,2,3,4,5].map(n=>`<span class="star" onclick="setNota('${esc(item)}',${n},${i})" id="s-${i}-${n}">★</span>`).join('')}
       </div>
       <div class="rlabel" id="rl-${i}">Clique para avaliar</div>
+      <div style="margin-top:10px">
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);font-weight:500">
+          <input type="checkbox" id="na-${i}" onchange="toggleNA('${esc(item)}',${i},this.checked)"
+            style="width:16px;height:16px;accent-color:var(--purple);cursor:pointer;flex-shrink:0">
+          Não sou avaliador deste produto/critério
+        </label>
+      </div>
     </div>`).join('');
 }
 
 const RL=['','Muito ruim','Ruim','Regular','Bom','Excelente'];
 function setNota(item,nota,idx){
+  // If NA is checked, uncheck it first
+  const naBox=document.getElementById(`na-${idx}`);
+  if(naBox && naBox.checked){ naBox.checked=false; toggleNA(item,idx,false); }
   avalNotas[item]=nota;
   for(let n=1;n<=5;n++){const s=document.getElementById(`s-${idx}-${n}`);if(s)s.className='star'+(n<=nota?' on':'')}
   const l=document.getElementById(`rl-${idx}`);if(l)l.textContent=`${nota}/5 — ${RL[nota]}`;
 }
 
+function toggleNA(item,idx,checked){
+  const stars=document.getElementById(`stars-${idx}`);
+  const label=document.getElementById(`rl-${idx}`);
+  if(checked){
+    // Mark as N/A — store special value and disable stars
+    avalNotas[item]='N/A';
+    if(stars) stars.style.opacity='0.3';
+    if(label){ label.textContent='Não avaliado — critério não aplicável'; label.style.color='var(--muted)'; }
+    // Clear star highlights
+    for(let n=1;n<=5;n++){const s=document.getElementById(`s-${idx}-${n}`);if(s)s.className='star';}
+  } else {
+    // Unmark N/A
+    delete avalNotas[item];
+    if(stars) stars.style.opacity='1';
+    if(label){ label.textContent='Clique para avaliar'; label.style.color=''; }
+  }
+}
+
 async function salvar(){
   const s=_cache;
-  const falta=s.av.itens.filter(i=>!avalNotas[i]);
-  if(falta.length){document.getElementById('aval-msg').innerHTML=`<div class="notice n-err">Avalie todos os critérios antes de salvar. Faltam: <strong>${falta.join(', ')}</strong></div>`;return}
+  const falta=s.av.itens.filter(i=>!avalNotas[i]); // undefined = not answered (N/A counts as answered)
+  if(falta.length){document.getElementById('aval-msg').innerHTML=`<div class="notice n-err">Avalie todos os critérios antes de salvar (ou marque "Não sou avaliador"). Faltam: <strong>${falta.join(', ')}</strong></div>`;return}
   const just=document.getElementById('aval-just').value.trim();
   const sug=document.getElementById('aval-sug').value.trim();
   document.getElementById('btn-salvar').disabled=true;
@@ -947,89 +975,120 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
   const cardIA=document.getElementById('card-ia');
   const iaEl=document.getElementById('ia-content');
 
-  const prompt=`Você é um especialista em desenvolvimento de liderança de uma empresa chamada Grupo Lev Negócios. Analise os resultados de avaliação 360° do líder abaixo e produza um feedback consolidado, direto, claro e motivacional. Escreva em português do Brasil.
+  // Filtra itens N/A
+  const itensValidos = mediasPorItem.filter(x=>x.media!=='—' && x.media!=='N/A');
+  const sorted = [...itensValidos].sort((a,b)=>parseFloat(b.media)-parseFloat(a.media));
+  const melhor = sorted[0];
+  const pior = sorted[sorted.length-1];
+  const mediaNum = parseFloat(mediaGeral);
 
-Líder avaliado: ${nome}
-Média geral: ${mediaGeral}/5
+  // Classifica performance
+  const perf = mediaNum>=4.5?'excelente':mediaNum>=3.5?'boa':mediaNum>=2.5?'regular':'abaixo do esperado';
 
-Médias por critério:
-${mediasPorItem.map(x=>`- ${x.item}: ${x.media}/5`).join('\n')}
+  // Identifica temas recorrentes nas justificativas e sugestões
+  const todasRespostas = [...justificativas, ...sugestoes].join(' ').toLowerCase();
+  const temas = [
+    {nome:'Comunicação', palavras:['comunicação','comunicar','comunicad','clareza','claro','clara','feedback','informação','diálogo']},
+    {nome:'Gestão de Tempo', palavras:['prazo','tempo','entrega','atraso','agenda','urgente','prioridade','cronograma']},
+    {nome:'Liderança', palavras:['liderança','liderar','equipe','time','motivar','engajamento','delegação','inspirar']},
+    {nome:'Qualidade', palavras:['qualidade','erro','revisão','atenção','detalhe','padrão','melhoria','processo']},
+    {nome:'Relacionamento', palavras:['relacionamento','colaboração','parceria','respeito','empatia','apoio','colega']},
+    {nome:'Conhecimento Técnico', palavras:['técnico','conhecimento','capacitação','treinamento','habilidade','expertise']},
+    {nome:'Proatividade', palavras:['proativo','iniciativa','proatividade','antecipação','busca','autonomia']},
+  ];
+  const temasEncontrados = temas.filter(t=>t.palavras.some(p=>todasRespostas.includes(p))).map(t=>t.nome);
 
-Justificativas escritas pelos avaliadores:
-${justificativas.length?justificativas.map((j,i)=>`${i+1}. "${j}"`).join('\n'):'(nenhuma registrada)'}
+  // Monta HTML da análise
+  let html = '';
 
-Sugestões escritas pelos avaliadores:
-${sugestoes.length?sugestoes.map((s,i)=>`${i+1}. "${s}"`).join('\n'):'(nenhuma registrada)'}
+  // Pontos Fortes
+  html += `<div style="margin-bottom:20px">
+    <div style="font-size:15px;font-weight:800;color:var(--accent);margin-bottom:10px;font-family:'Nunito',sans-serif">✅ Pontos Fortes</div>`;
 
-Produza uma análise com EXATAMENTE estas 3 seções, usando os títulos em negrito:
-
-**✅ Pontos Fortes**
-(2 a 3 pontos positivos identificados, de forma objetiva e encorajadora)
-
-**🎯 Oportunidades de Melhoria**
-(2 a 3 pontos de desenvolvimento, escritos de forma construtiva e motivacional, nunca depreciativa)
-
-**🚀 Próximos Passos Sugeridos**
-(2 a 3 ações concretas e práticas que o líder pode tomar)
-
-Seja direto. Use frases curtas. Tom positivo e profissional. Não repita os números das notas — foque na interpretação qualitativa.`;
-
-  // Gera análise local com base nos dados sem precisar de API externa
-  try {
-    const mediaNum = parseFloat(mediaGeral);
-    let classificacao = '';
-    let pontosFortesTexto = '';
-    let melhoriaTexto = '';
-    let proximosPassosTexto = '';
-
-    if(mediaNum >= 4.5) classificacao = 'excelente';
-    else if(mediaNum >= 3.5) classificacao = 'boa';
-    else if(mediaNum >= 2.5) classificacao = 'regular';
-    else classificacao = 'abaixo do esperado';
-
-    // Melhor e pior critério
-    const sorted = [...mediasPorItem].filter(x=>x.media!=='—').sort((a,b)=>parseFloat(b.media)-parseFloat(a.media));
-    const melhor = sorted[0];
-    const pior = sorted[sorted.length-1];
-
-    pontosFortesTexto = melhor
-      ? `<strong>✅ Pontos Fortes</strong><br>Seu desempenho geral é <strong>${classificacao}</strong>, com média de <strong>${mediaGeral}/5</strong>. `
-        + `O critério de maior destaque é <strong>${melhor.item}</strong> (${melhor.media}/5), mostrando que você já possui uma base sólida nessa competência. `
-        + (justificativas.length ? `Os avaliadores reconhecem seu esforço e dedicação — veja os feedbacks completos abaixo para mais detalhes.` : '')
-      : '';
-
-    melhoriaTexto = pior && sorted.length > 1
-      ? `<strong>🎯 Oportunidades de Melhoria</strong><br>O critério <strong>${pior.item}</strong> (${pior.media}/5) apresenta maior espaço para desenvolvimento. `
-        + `Isso não é um ponto negativo — é uma oportunidade valiosa de crescimento profissional. `
-        + (sugestoes.length ? `Seus avaliadores deixaram sugestões concretas que podem te ajudar nessa jornada — confira na seção abaixo.` : '')
-      : '';
-
-    proximosPassosTexto = `<strong>🚀 Próximos Passos Sugeridos</strong><br>`
-      + `1. Leia com atenção cada justificativa e sugestão deixada pelos avaliadores — são insumos valiosos para seu desenvolvimento.<br>`
-      + `2. Converse com seu gestor sobre os pontos levantados e construa um plano de ação conjunto.<br>`
-      + `3. Estabeleça metas de curto prazo focadas nos critérios com maior oportunidade de melhoria.`;
-
-    const htmlResult = [pontosFortesTexto, melhoriaTexto, proximosPassosTexto]
-      .filter(Boolean).join('<br><br>');
-
-    cardIA.querySelector('.badge').textContent='Análise';
-    cardIA.querySelector('.badge').className='badge';
-    iaEl.innerHTML=`<div style="line-height:1.9;font-size:14px">${htmlResult}</div>`;
-  } catch(e){
-    iaEl.innerHTML=`<div class="notice n-warn">Não foi possível gerar a análise agora. Consulte os feedbacks escritos abaixo.</div>`;
-    if(cardIA.querySelector('.badge')) cardIA.querySelector('.badge').remove();
+  if(melhor){
+    html += `<p style="margin-bottom:8px">O critério <strong>${melhor.item}</strong> se destacou como o principal ponto forte (média <strong>${melhor.media}/5</strong>), demonstrando competência consolidada nessa área.</p>`;
   }
+  if(mediaNum>=3.5){
+    html += `<p style="margin-bottom:8px">O desempenho geral é <strong>${perf}</strong> (média <strong>${mediaGeral}/5</strong>), indicando que as entregas e comportamentos estão alinhados às expectativas da equipe.</p>`;
+  }
+  if(justificativas.length){
+    html += `<p style="margin-bottom:8px">Os avaliadores reconhecem a dedicação e contribuição de <strong>${nome.split(' ')[0]}</strong> — os feedbacks escritos trazem exemplos concretos desse reconhecimento.</p>`;
+  }
+  html += `</div>`;
+
+  // Temas recorrentes
+  if(temasEncontrados.length > 0){
+    html += `<div style="margin-bottom:20px">
+      <div style="font-size:15px;font-weight:800;color:var(--purple);margin-bottom:10px;font-family:'Nunito',sans-serif">🔍 Temas Recorrentes nos Feedbacks</div>
+      <p style="margin-bottom:10px">Os avaliadores mencionaram com frequência os seguintes temas:</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        ${temasEncontrados.map(t=>`<span style="background:var(--accent-l);color:var(--purple);font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px">${t}</span>`).join('')}
+      </div>
+      <p>Esses temas representam os principais eixos de percepção da equipe e devem ser os focos prioritários de atenção e desenvolvimento.</p>
+    </div>`;
+  }
+
+  // Oportunidades de Melhoria
+  html += `<div style="margin-bottom:20px">
+    <div style="font-size:15px;font-weight:800;color:#b5166e;margin-bottom:10px;font-family:'Nunito',sans-serif">🎯 Oportunidades de Melhoria</div>`;
+
+  if(pior && sorted.length>1){
+    html += `<p style="margin-bottom:8px">O critério <strong>${pior.item}</strong> (média <strong>${pior.media}/5</strong>) apresenta o maior espaço de desenvolvimento — é onde o investimento em melhoria terá maior impacto visível para a equipe.</p>`;
+  }
+  if(sugestoes.length){
+    html += `<p style="margin-bottom:8px">As sugestões enviadas pelos avaliadores trazem direcionamentos práticos e observáveis. Traduzindo o que foi dito: a equipe espera melhorias nas <strong>entregas consistentes</strong> e na <strong>clareza das comunicações</strong>.</p>`;
+  }
+  if(itensValidos.length>1){
+    const medianos = sorted.filter(x=>parseFloat(x.media)>=2.5 && parseFloat(x.media)<3.8);
+    if(medianos.length){
+      html += `<p style="margin-bottom:8px">Os critérios <strong>${medianos.map(x=>x.item).join(', ')}</strong> estão em desenvolvimento — pequenas ações consistentes nessas áreas podem gerar avanços rápidos.</p>`;
+    }
+  }
+  html += `</div>`;
+
+  // Plano de Ação
+  html += `<div style="margin-bottom:20px">
+    <div style="font-size:15px;font-weight:800;color:var(--purple);margin-bottom:10px;font-family:'Nunito',sans-serif">🚀 Próximo Passo Prático</div>
+    <div style="background:var(--surface2);border-radius:10px;padding:16px">`;
+
+  html += `<p style="margin-bottom:8px"><strong>1.</strong> Leia com atenção cada justificativa e sugestão deixada pelos avaliadores — são insumos diretos e observáveis da percepção da equipe.</p>`;
+
+  if(pior){
+    html += `<p style="margin-bottom:8px"><strong>2.</strong> Escolha <strong>uma ação concreta</strong> para melhorar em <strong>${pior.item}</strong> nas próximas 2 semanas e compartilhe esse compromisso com seu gestor.</p>`;
+  } else {
+    html += `<p style="margin-bottom:8px"><strong>2.</strong> Defina com seu gestor uma meta de desenvolvimento para o próximo ciclo, com prazo e indicador claro de progresso.</p>`;
+  }
+
+  if(temasEncontrados.length>0){
+    html += `<p style="margin-bottom:0"><strong>3.</strong> Aprofunde-se nos temas <strong>${temasEncontrados.slice(0,2).join(' e ')}</strong> — busque uma referência prática (livro, curso ou mentoria) para avançar nessas competências.</p>`;
+  } else {
+    html += `<p style="margin-bottom:0"><strong>3.</strong> Agende uma conversa com seu gestor para discutir os resultados e construir juntos um plano de desenvolvimento para o próximo ciclo.</p>`;
+  }
+
+  html += `</div></div>`;
+
+  // Encerramento motivacional
+  const primeiroNome = nome.split(' ')[0];
+  html += `<div style="background:linear-gradient(135deg,var(--purple) 0%,#5C2D7E 100%);border-radius:12px;padding:20px 24px;color:#fff;margin-top:4px">
+    <div style="font-size:15px;font-weight:800;margin-bottom:8px;font-family:'Nunito',sans-serif">💜 Mensagem Final</div>
+    <p style="line-height:1.7;opacity:.95;margin-bottom:8px">
+      <strong>${primeiroNome}</strong>, receber feedback é um sinal de confiança da equipe em você. Cada avaliação é uma oportunidade de crescimento — e o fato de você estar aqui, analisando os resultados, já demonstra maturidade e comprometimento com o seu desenvolvimento.
+    </p>
+    <p style="line-height:1.7;opacity:.9;margin-bottom:0">
+      Você é parte fundamental desta equipe. Continue evoluindo — os melhores líderes são aqueles que nunca param de aprender. 🚀
+    </p>
+  </div>`;
+
+  // Nota sobre feedbacks escritos
+  html += `<div class="notice n-warn" style="margin-top:16px;font-size:13px">
+    📋 <strong>Recomendação:</strong> Consulte a seção <em>"Ver na íntegra o que foi escrito"</em> abaixo para ler todas as justificativas e sugestões dos avaliadores — elas complementam esta análise com contexto real e observações específicas.
+  </div>`;
+
+  cardIA.querySelector('.badge').textContent='Análise';
+  cardIA.querySelector('.badge').className='badge';
+  iaEl.innerHTML=`<div style="line-height:1.8;font-size:14px">${html}</div>`;
 }
 
-// ── LOADING ──────────────────────────────────────────
-function showLoading(txt='Carregando...'){
-  const el=document.getElementById('loading-overlay');
-  document.getElementById('loading-text').textContent=txt;
-  el.style.display='flex';
-}
-function hideLoading(){
-  document.getElementById('loading-overlay').style.display='none';
-}
 
 // ── HELPERS ───────────────────────────────────────────
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
