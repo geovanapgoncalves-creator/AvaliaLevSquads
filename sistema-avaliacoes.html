@@ -985,18 +985,51 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
   // Classifica performance
   const perf = mediaNum>=4.5?'excelente':mediaNum>=3.5?'boa':mediaNum>=2.5?'regular':'abaixo do esperado';
 
-  // Identifica temas recorrentes nas justificativas e sugestões
-  const todasRespostas = [...justificativas, ...sugestoes].join(' ').toLowerCase();
-  const temas = [
-    {nome:'Comunicação', palavras:['comunicação','comunicar','comunicad','clareza','claro','clara','feedback','informação','diálogo']},
-    {nome:'Gestão de Tempo', palavras:['prazo','tempo','entrega','atraso','agenda','urgente','prioridade','cronograma']},
-    {nome:'Liderança', palavras:['liderança','liderar','equipe','time','motivar','engajamento','delegação','inspirar']},
-    {nome:'Qualidade', palavras:['qualidade','erro','revisão','atenção','detalhe','padrão','melhoria','processo']},
-    {nome:'Relacionamento', palavras:['relacionamento','colaboração','parceria','respeito','empatia','apoio','colega']},
-    {nome:'Conhecimento Técnico', palavras:['técnico','conhecimento','capacitação','treinamento','habilidade','expertise']},
-    {nome:'Proatividade', palavras:['proativo','iniciativa','proatividade','antecipação','busca','autonomia']},
+  // ── ANÁLISE INTERNA DE TEMAS (não exibida) ──────────────────────────
+  // Para cada avaliador, verifica quais temas ele mencionou nas suas respostas.
+  // Só conta 1 vez por avaliador por tema (mesmo que cite várias vezes).
+  // Apenas temas citados por 2+ avaliadores aparecem no resultado final.
+
+  const temasDef = [
+    {nome:'Comunicação',         palavras:['comunicação','comunicar','comunicad','clareza','claro','clara','feedback','informação','diálogo','transparência','transparente']},
+    {nome:'Gestão de Tempo',     palavras:['prazo','tempo','entrega','atraso','agenda','urgente','prioridade','cronograma','deadline','pontualidade','pontual']},
+    {nome:'Liderança',           palavras:['liderança','liderar','líder','equipe','time','motivar','engajamento','delegação','inspirar','direcionamento','autonomia da equipe']},
+    {nome:'Qualidade',           palavras:['qualidade','erro','revisão','atenção','detalhe','padrão','melhoria','processo','retrabalho','acurácia','precisão']},
+    {nome:'Relacionamento',      palavras:['relacionamento','colaboração','parceria','respeito','empatia','apoio','colega','interpessoal','convivência','harmonia']},
+    {nome:'Conhecimento Técnico',palavras:['técnico','conhecimento','capacitação','treinamento','habilidade','expertise','domínio','atualização','especialização']},
+    {nome:'Proatividade',        palavras:['proativo','iniciativa','proatividade','antecipação','busca','protagonismo','propõe','sugere','antecipar']},
+    {nome:'Organização',         palavras:['organização','organizado','planejamento','planejar','estrutura','método','sistematização','controle']},
+    {nome:'Tomada de Decisão',   palavras:['decisão','decidir','resolução','resolver','posicionamento','escolha','definição','assertividade']},
+    {nome:'Desenvolvimento de Pessoas', palavras:['desenvolver','desenvolvimento','mentoria','mentor','crescimento','capacitar','orientar','feedback para equipe']},
   ];
-  const temasEncontrados = temas.filter(t=>t.palavras.some(p=>todasRespostas.includes(p))).map(t=>t.nome);
+
+  // Junta justificativa + sugestão de cada avaliador em um texto por pessoa
+  // (justificativas e sugestoes são arrays paralelos vindos dos mesmos avaliadores)
+  const respostasIndividuais = justificativas.map((j,i) => 
+    ((j||'') + ' ' + (sugestoes[i]||'')).toLowerCase()
+  );
+  // Inclui sugestões extras se houver mais sugestões que justificativas
+  for(let i=justificativas.length; i<sugestoes.length; i++){
+    respostasIndividuais.push((sugestoes[i]||'').toLowerCase());
+  }
+
+  // Para cada tema, conta em quantos avaliadores ele aparece (máx 1 por avaliador)
+  const contagemTemas = temasDef.map(tema => {
+    const avaliadoresTocaram = respostasIndividuais.filter(resp =>
+      tema.palavras.some(p => resp.includes(p))
+    );
+    return {
+      nome: tema.nome,
+      avaliadores: avaliadoresTocaram.length,  // quantos avaliadores mencionaram
+      // (uso interno — não exibido)
+    };
+  });
+
+  // Filtra: apenas temas com 2+ avaliadores diferentes
+  const temasEncontrados = contagemTemas
+    .filter(t => t.avaliadores >= 2)
+    .sort((a,b) => b.avaliadores - a.avaliadores)  // mais citados primeiro
+    .map(t => t.nome);
 
   // Monta HTML da análise
   let html = '';
