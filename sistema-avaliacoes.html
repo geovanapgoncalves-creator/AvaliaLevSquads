@@ -1207,33 +1207,42 @@ async function confirmarLimpar(){
   document.getElementById('modal-limpar').style.display='none';
   showLoading('Limpando base de dados...');
   try{
-    const r1 = await fetch(`${SB_URL}/rest/v1/respostas?id=neq.00000000-0000-0000-0000-000000000000`,{
-      method:'DELETE',
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
-    });
-    if(!r1.ok) throw new Error(await r1.text());
+    // Step 1: buscar todos os IDs de respostas e deletar um a um se necessário
+    const resps = await sbGet('respostas','select=id');
+    for(const r of resps){
+      const rd = await fetch(`${SB_URL}/rest/v1/respostas?id=eq.${r.id}`,{
+        method:'DELETE',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+      });
+      if(!rd.ok){const t=await rd.text();console.error('Erro deletando resposta',r.id,t);}
+    }
 
-    const r2 = await fetch(`${SB_URL}/rest/v1/avaliacoes?id=neq.00000000-0000-0000-0000-000000000000`,{
-      method:'DELETE',
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
-    });
-    if(!r2.ok) throw new Error(await r2.text());
+    // Step 2: buscar todos os IDs de avaliacoes e deletar um a um
+    const avs = await sbGet('avaliacoes','select=id');
+    for(const a of avs){
+      const ad = await fetch(`${SB_URL}/rest/v1/avaliacoes?id=eq.${a.id}`,{
+        method:'DELETE',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+      });
+      if(!ad.ok){const t=await ad.text();console.error('Erro deletando avaliacao',a.id,t);}
+    }
 
-    // Zera cache completamente e força busca no banco
+    // Step 3: zera cache e recarrega tudo do banco
     _cache = {av:null, resp:[], lastFetch:0};
     await refreshCache();
+
+    // Step 4: atualiza todas as telas
+    document.getElementById('dash-content').innerHTML='';
+    document.getElementById('exp-tbl').innerHTML='';
     hideLoading();
     await syncAdmin();
     await renderDash();
     await renderExp();
-    // Força re-render do dashboard visualmente
-    document.getElementById('dash-content').innerHTML='';
-    await renderDash();
     msg('cfg-msg','ok','✅ Base de dados limpa com sucesso! O sistema está pronto para o ciclo real.');
-    swTab('tc');
   }catch(e){
     hideLoading();
     msg('cfg-msg','err','Erro ao limpar base: '+e.message);
+    console.error('Erro limpar base:',e);
   }
 }
 
@@ -1260,19 +1269,37 @@ async function executarExcluirResposta(){
   document.getElementById('modal-excluir-resp').style.display='none';
   showLoading('Excluindo avaliação...');
   try{
-    const r = await fetch(
-      `${SB_URL}/rest/v1/respostas?avaliador_email=eq.${encodeURIComponent(_excluirEmail)}&lider_email=eq.${encodeURIComponent(_excluirLiderEmail)}`,
-      { method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'} }
+    // Busca os IDs exatos das respostas deste avaliador para este líder
+    const resps = await sbGet('respostas',
+      `select=id&avaliador_email=eq.${encodeURIComponent(_excluirEmail)}&lider_email=eq.${encodeURIComponent(_excluirLiderEmail)}`
     );
-    if(!r.ok) throw new Error(await r.text());
-    _cache.lastFetch=0;
+    if(!resps.length) throw new Error('Nenhuma resposta encontrada para excluir.');
+
+    // Deleta cada registro pelo ID exato
+    for(const r of resps){
+      const rd = await fetch(`${SB_URL}/rest/v1/respostas?id=eq.${r.id}`,{
+        method:'DELETE',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+      });
+      if(!rd.ok) throw new Error(await rd.text());
+    }
+
+    // Zera cache e recarrega do banco
+    _cache = {av:null, resp:[], lastFetch:0};
+    await refreshCache();
+
+    // Atualiza dashboard e exportar
+    document.getElementById('dash-content').innerHTML='';
+    document.getElementById('exp-tbl').innerHTML='';
     hideLoading();
     await renderDash();
+    await renderExp();
     swTab('td');
     msg('cfg-msg','ok',`✅ Avaliação de <strong>${_excluirEmail}</strong> excluída. O avaliador já pode refazer.`);
   }catch(e){
     hideLoading();
-    alert('Erro ao excluir: '+e.message);
+    msg('cfg-msg','err','Erro ao excluir: '+e.message);
+    console.error('Erro excluir resposta:',e);
   }
   _excluirEmail=null; _excluirLiderEmail=null; _excluirRowId=null;
 }
