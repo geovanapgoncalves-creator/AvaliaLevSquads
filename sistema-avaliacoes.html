@@ -1181,6 +1181,97 @@ function toTitle(s){return String(s||'').toLowerCase().replace(/\b\w/g,c=>c.toUp
 function stars(v){if(isNaN(v))return'☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,5))+'☆'.repeat(Math.max(0,5-f))}
 function starsN(v){if(isNaN(v))return'☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,5))+'☆'.repeat(Math.max(0,5-f))}
 function msg(id,type,html){const m={'ok':'n-ok','warn':'n-warn','err':'n-err'};document.getElementById(id).innerHTML=`<div class="notice ${m[type]||'n-ok'}">${html}</div>`}
+
+// ── LOADING ──────────────────────────────────────────
+function showLoading(txt='Carregando...'){
+  const el=document.getElementById('loading-overlay');
+  document.getElementById('loading-text').textContent=txt;
+  el.style.display='flex';
+}
+function hideLoading(){
+  document.getElementById('loading-overlay').style.display='none';
+}
+
+// ── LIMPAR BASE ──────────────────────────────────────
+function abrirModalLimpar(){
+  document.getElementById('limpar-confirm-input').value='';
+  document.getElementById('btn-confirmar-limpar').disabled=true;
+  document.getElementById('modal-limpar').style.display='flex';
+}
+
+function fecharModalLimpar(){
+  document.getElementById('modal-limpar').style.display='none';
+}
+
+async function confirmarLimpar(){
+  document.getElementById('modal-limpar').style.display='none';
+  showLoading('Limpando base de dados...');
+  try{
+    const r1 = await fetch(`${SB_URL}/rest/v1/respostas?id=neq.00000000-0000-0000-0000-000000000000`,{
+      method:'DELETE',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+    });
+    if(!r1.ok) throw new Error(await r1.text());
+
+    const r2 = await fetch(`${SB_URL}/rest/v1/avaliacoes?id=neq.00000000-0000-0000-0000-000000000000`,{
+      method:'DELETE',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+    });
+    if(!r2.ok) throw new Error(await r2.text());
+
+    _cache = {av:null, resp:[], lastFetch:0};
+    hideLoading();
+    await syncAdmin();
+    await renderDash();
+    await renderExp();
+    msg('cfg-msg','ok','✅ Base de dados limpa com sucesso! O sistema está pronto para o ciclo real.');
+    swTab('tc');
+  }catch(e){
+    hideLoading();
+    msg('cfg-msg','err','Erro ao limpar base: '+e.message);
+  }
+}
+
+// ── EXCLUIR RESPOSTA INDIVIDUAL ──────────────────────
+let _excluirEmail = null;
+let _excluirLiderEmail = null;
+let _excluirRowId = null;
+
+function confirmarExcluirResposta(email, liderEmail, rowId){
+  _excluirEmail = email;
+  _excluirLiderEmail = liderEmail;
+  _excluirRowId = rowId;
+  document.getElementById('excluir-resp-info').innerHTML =
+    `<strong>Avaliador:</strong> ${email}<br><strong>Líder avaliado:</strong> ${toTitle(PESSOAS.find(p=>p.email===liderEmail)?.nome||liderEmail)}`;
+  document.getElementById('modal-excluir-resp').style.display='flex';
+}
+
+function fecharModalExcluirResp(){
+  document.getElementById('modal-excluir-resp').style.display='none';
+  _excluirEmail=null; _excluirLiderEmail=null; _excluirRowId=null;
+}
+
+async function executarExcluirResposta(){
+  document.getElementById('modal-excluir-resp').style.display='none';
+  showLoading('Excluindo avaliação...');
+  try{
+    const r = await fetch(
+      `${SB_URL}/rest/v1/respostas?avaliador_email=eq.${encodeURIComponent(_excluirEmail)}&lider_email=eq.${encodeURIComponent(_excluirLiderEmail)}`,
+      { method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'} }
+    );
+    if(!r.ok) throw new Error(await r.text());
+    _cache.lastFetch=0;
+    hideLoading();
+    await renderDash();
+    swTab('td');
+    msg('cfg-msg','ok',`✅ Avaliação de <strong>${_excluirEmail}</strong> excluída. O avaliador já pode refazer.`);
+  }catch(e){
+    hideLoading();
+    alert('Erro ao excluir: '+e.message);
+  }
+  _excluirEmail=null; _excluirLiderEmail=null; _excluirRowId=null;
+}
+
 </script>
 </body>
 </html>
