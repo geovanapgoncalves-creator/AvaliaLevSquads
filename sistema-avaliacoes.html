@@ -416,6 +416,7 @@
 // ── SUPABASE CONFIG ──────────────────────────────────
 const SB_URL = 'https://gfrluwtkdmumgpthhhpn.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmcmx1d3RrZG11bWdwdGhoaHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzUxNzMsImV4cCI6MjA5ODY1MTE3M30.Sb-WgBG8aceNwE3a63si53BzSg3TV6SYXjViYJZkqO4';
+const SB_SVC = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmcmx1d3RrZG11bWdwdGhoaHBuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzA3NTE3MywiZXhwIjoyMDk4NjUxMTczfQ.g06lXkEQwArNi5vZVwlFcmknr0hDRAfslNd7h0L5B58'; // service key para operações de exclusão
 
 async function sbGet(table, filters='') {
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${filters}`, {
@@ -1212,7 +1213,7 @@ async function confirmarLimpar(){
     for(const r of resps){
       const rd = await fetch(`${SB_URL}/rest/v1/respostas?id=eq.${r.id}`,{
         method:'DELETE',
-        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+        headers:{'apikey':SB_SVC,'Authorization':'Bearer '+SB_SVC,'Prefer':'return=minimal'}
       });
       if(!rd.ok){const t=await rd.text();console.error('Erro deletando resposta',r.id,t);}
     }
@@ -1279,7 +1280,7 @@ async function executarExcluirResposta(){
     for(const r of resps){
       const rd = await fetch(`${SB_URL}/rest/v1/respostas?id=eq.${r.id}`,{
         method:'DELETE',
-        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'}
+        headers:{'apikey':SB_SVC,'Authorization':'Bearer '+SB_SVC,'Prefer':'return=minimal'}
       });
       if(!rd.ok) throw new Error(await rd.text());
     }
