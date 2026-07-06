@@ -396,6 +396,21 @@
   </div>
 </div>
 
+<!-- MODAL EXCLUIR RESPOSTA INDIVIDUAL -->
+<div id="modal-excluir-resp" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="mic">🗑️</div>
+    <h3>Excluir avaliação?</h3>
+    <p>Você está prestes a excluir a avaliação enviada por:</p>
+    <div class="minfo" id="excluir-resp-info"></div>
+    <p style="margin-top:8px">O avaliador poderá refazer a avaliação após a exclusão.</p>
+    <div class="mbtns">
+      <button class="btn btn-s" onclick="fecharModalExcluirResp()">Cancelar</button>
+      <button class="btn btn-d" onclick="executarExcluirResposta()">🗑️ Excluir</button>
+    </div>
+  </div>
+</div>
+
 <script>
 
 // ── SUPABASE CONFIG ──────────────────────────────────
@@ -730,14 +745,20 @@ async function renderDash(){
       <details style="margin-bottom:16px">
         <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent)">Ver respostas individuais (${resps.length})</summary>
         <div style="margin-top:14px">
-        ${resps.map(r=>{
-          const med=(Object.values(r.notas||{}).reduce((a,b)=>a+b,0)/Object.values(r.notas||{}).length).toFixed(1);
-          return `<div class="rrow">
+        ${resps.map((r,ri)=>{
+          const notas=Object.values(r.notas||{}).filter(v=>v!=='N/A');
+          const med=notas.length?(notas.reduce((a,b)=>a+Number(b),0)/notas.length).toFixed(1):'—';
+          const rid=`${lEmail}_${ri}`;
+          return `<div class="rrow" id="rrow-${rid}">
             <div class="rhead">
               <div><div class="rname">${r.email}</div><div class="remail">${r.data}</div></div>
-              <div class="rscore">${med}<span style="font-size:12px;color:var(--muted);font-family:'Nunito',sans-serif;font-weight:400"> /5</span></div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <div class="rscore">${med}<span style="font-size:12px;color:var(--muted);font-family:'Nunito',sans-serif;font-weight:400"> /5</span></div>
+                <button class="btn btn-d btn-sm" onclick="confirmarExcluirResposta('${esc(r.email)}','${esc(lEmail)}','${rid}')"
+                  style="padding:5px 10px;font-size:12px" title="Excluir esta avaliação">🗑️</button>
+              </div>
             </div>
-            <div class="ritems">${Object.entries(r.notas||{}).map(([k,v])=>`<div class="ri"><div class="ril">${esc(k)}</div><div class="ris">${v}</div><div style="font-size:11px;color:var(--pink)">${'★'.repeat(v)}${'☆'.repeat(5-v)}</div></div>`).join('')}</div>
+            <div class="ritems">${Object.entries(r.notas||{}).map(([k,v])=>`<div class="ri"><div class="ril">${esc(k)}</div><div class="ris">${v==='N/A'?'N/A':v}</div><div style="font-size:11px;color:var(--pink)">${v==='N/A'?'<span style=\'font-size:11px;color:var(--muted)\'>não avaliado</span>':'★'.repeat(Number(v))+'☆'.repeat(5-Number(v))}</div></div>`).join('')}</div>
             ${r.just?`<div class="rtxt"><strong>💬 Justificativa</strong>${esc(r.just)}</div>`:''}
             ${r.sug?`<div class="rtxt"><strong>💡 Sugestões</strong>${esc(r.sug)}</div>`:''}
           </div>`;
