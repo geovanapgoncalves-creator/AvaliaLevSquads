@@ -83,7 +83,7 @@
 
   /* STARS */
   .stars{display:flex;gap:6px;margin:6px 0}
-  .star{font-size:26px;cursor:pointer;color:#D9D5CE;transition:color .1s,transform .1s;user-select:none}
+  .star{font-size:20px;cursor:pointer;color:#D9D5CE;transition:color .1s,transform .1s;user-select:none}
   .star:hover,.star.on{color:var(--pink)}
   .star:hover{transform:scale(1.15)}
   .rlabel{font-size:13px;color:var(--muted);margin-top:2px}
@@ -721,7 +721,7 @@ async function renderDash(){
     const itens=resps[0]?.notas?Object.keys(resps[0].notas):[];
 
     // Médias
-    const mediaGeral=(resps.map(r=>{const v=Object.values(r.notas||{});return v.length?v.reduce((a,b)=>a+b,0)/v.length:0}).reduce((a,b)=>a+b,0)/resps.length).toFixed(1);
+    const mediaGeral=(()=>{const vm=resps.map(r=>{const v=Object.values(r.notas||{}).filter(x=>typeof x==='number');return v.length?v.reduce((a,b)=>a+b,0)/v.length:null}).filter(x=>x!==null);return vm.length?(vm.reduce((a,b)=>a+b,0)/vm.length).toFixed(1):'0.0'})();
     const mediasPorItem=itens.map(item=>{
       const v=resps.map(r=>r.notas[item]||0).filter(x=>x>0);
       return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):'—';
@@ -731,7 +731,7 @@ async function renderDash(){
     <div class="card" style="border-top:4px solid var(--purple)">
       <div class="ctitle">${lNome} <span class="badge">${resps.length} respostas</span></div>
       <div class="sgrid">
-        <div class="scard"><div class="num">${mediaGeral}</div><div class="lbl">Média geral (de 5)</div></div>
+        <div class="scard"><div class="num">${mediaGeral}</div><div class="lbl">Média geral (de 10)</div></div>
         <div class="scard"><div class="num">${stars(parseFloat(mediaGeral))}</div><div class="lbl">Classificação</div></div>
         <div class="scard"><div class="num">${resps.length}/${avaliadores.length}</div><div class="lbl">Responderam</div></div>
       </div>
@@ -754,12 +754,12 @@ async function renderDash(){
             <div class="rhead">
               <div><div class="rname">${r.email}</div><div class="remail">${r.data}</div></div>
               <div style="display:flex;align-items:center;gap:12px">
-                <div class="rscore">${med}<span style="font-size:12px;color:var(--muted);font-family:'Nunito',sans-serif;font-weight:400"> /5</span></div>
+                <div class="rscore">${med}<span style="font-size:12px;color:var(--muted);font-family:'Nunito',sans-serif;font-weight:400"> /10</span></div>
                 <button class="btn btn-d btn-sm" onclick="confirmarExcluirResposta('${esc(r.email)}','${esc(lEmail)}','${rid}')"
                   style="padding:5px 10px;font-size:12px" title="Excluir esta avaliação">🗑️</button>
               </div>
             </div>
-            <div class="ritems">${Object.entries(r.notas||{}).map(([k,v])=>`<div class="ri"><div class="ril">${esc(k)}</div><div class="ris">${v==='N/A'?'N/A':v}</div><div style="font-size:11px;color:var(--pink)">${v==='N/A'?'<span style=\'font-size:11px;color:var(--muted)\'>não avaliado</span>':'★'.repeat(Number(v))+'☆'.repeat(5-Number(v))}</div></div>`).join('')}</div>
+            <div class="ritems">${Object.entries(r.notas||{}).map(([k,v])=>`<div class="ri"><div class="ril">${esc(k)}</div><div class="ris">${v==='N/A'?'N/A':v}</div><div style="font-size:11px;color:var(--pink)">${v==='N/A'?'<span style=\'font-size:11px;color:var(--muted)\'>não avaliado</span>':'★'.repeat(Number(v))+'☆'.repeat(10-Number(v))}</div></div>`).join('')}</div>
             ${r.just?`<div class="rtxt"><strong>💬 Justificativa</strong>${esc(r.just)}</div>`:''}
             ${r.sug?`<div class="rtxt"><strong>💡 Sugestões</strong>${esc(r.sug)}</div>`:''}
           </div>`;
@@ -864,7 +864,7 @@ function renderAvalForm(av){
     <div class="eitem" id="eitem-${i}">
       <div class="eitem-title"><span style="display:inline-flex;width:24px;height:24px;background:var(--purple);color:#fff;border-radius:50%;font-size:12px;font-weight:700;align-items:center;justify-content:center;margin-right:8px">${i+1}</span>${esc(item)}</div>
       <div class="stars" id="stars-${i}">
-        ${[1,2,3,4,5].map(n=>`<span class="star" onclick="setNota('${esc(item)}',${n},${i})" id="s-${i}-${n}">★</span>`).join('')}
+        ${[1,2,3,4,5,6,7,8,9,10].map(n=>`<span class="star" onclick="setNota('${esc(item)}',${n},${i})" id="s-${i}-${n}">★</span>`).join('')}
       </div>
       <div class="rlabel" id="rl-${i}">Clique para avaliar</div>
       <div style="margin-top:10px">
@@ -877,14 +877,14 @@ function renderAvalForm(av){
     </div>`).join('');
 }
 
-const RL=['','Muito ruim','Ruim','Regular','Bom','Excelente'];
+const RL=['','Péssimo','Muito ruim','Ruim','Fraco','Regular','Satisfatório','Bom','Muito bom','Ótimo','Excelente'];
 function setNota(item,nota,idx){
   // If NA is checked, uncheck it first
   const naBox=document.getElementById(`na-${idx}`);
   if(naBox && naBox.checked){ naBox.checked=false; toggleNA(item,idx,false); }
   avalNotas[item]=nota;
-  for(let n=1;n<=5;n++){const s=document.getElementById(`s-${idx}-${n}`);if(s)s.className='star'+(n<=nota?' on':'')}
-  const l=document.getElementById(`rl-${idx}`);if(l)l.textContent=`${nota}/5 — ${RL[nota]}`;
+  for(let n=1;n<=10;n++){const s=document.getElementById(`s-${idx}-${n}`);if(s)s.className='star'+(n<=nota?' on':'')}
+  const l=document.getElementById(`rl-${idx}`);if(l)l.textContent=`${nota}/10 — ${RL[nota]}`;
 }
 
 function toggleNA(item,idx,checked){
@@ -896,7 +896,7 @@ function toggleNA(item,idx,checked){
     if(stars) stars.style.opacity='0.3';
     if(label){ label.textContent='Não avaliado — critério não aplicável'; label.style.color='var(--muted)'; }
     // Clear star highlights
-    for(let n=1;n<=5;n++){const s=document.getElementById(`s-${idx}-${n}`);if(s)s.className='star';}
+    for(let n=1;n<=10;n++){const s=document.getElementById(`s-${idx}-${n}`);if(s)s.className='star';}
   } else {
     // Unmark N/A
     delete avalNotas[item];
@@ -952,7 +952,7 @@ async function renderResultado(pessoa, resps){
   const el=document.getElementById('resultado-content');
   const nomeExib=toTitle(pessoa.nome);
   const itens=resps[0]?.notas?Object.keys(resps[0].notas):[];
-  const mediaGeral=(resps.map(r=>{const v=Object.values(r.notas||{});return v.length?v.reduce((a,b)=>a+b,0)/v.length:0}).reduce((a,b)=>a+b,0)/resps.length).toFixed(1);
+  const mediaGeral=(()=>{const vm=resps.map(r=>{const v=Object.values(r.notas||{}).filter(x=>typeof x==='number');return v.length?v.reduce((a,b)=>a+b,0)/v.length:null}).filter(x=>x!==null);return vm.length?(vm.reduce((a,b)=>a+b,0)/vm.length).toFixed(1):'0.0'})();
   const mediasPorItem=itens.map(item=>{
     const v=resps.map(r=>r.notas[item]||0).filter(x=>x>0);
     return {item, media: v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):'—'};
@@ -968,7 +968,7 @@ async function renderResultado(pessoa, resps){
     </div>
 
     <div class="sgrid">
-      <div class="scard"><div class="num">${mediaGeral}</div><div class="lbl">Média geral (de 5)</div></div>
+      <div class="scard"><div class="num">${mediaGeral}</div><div class="lbl">Média geral (de 10)</div></div>
       <div class="scard"><div class="num" style="font-size:22px">${stars(parseFloat(mediaGeral))}</div><div class="lbl">Classificação</div></div>
       <div class="scard"><div class="num">${resps.length}</div><div class="lbl">Avaliadores responderam</div></div>
     </div>
@@ -1036,7 +1036,7 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
   const mediaNum = parseFloat(mediaGeral);
 
   // Classifica performance
-  const perf = mediaNum>=4.5?'excelente':mediaNum>=3.5?'boa':mediaNum>=2.5?'regular':'abaixo do esperado';
+  const perf = mediaNum>=9?'excelente':mediaNum>=7?'boa':mediaNum>=5?'regular':'abaixo do esperado';
 
   // ── ANÁLISE INTERNA DE TEMAS (não exibida) ──────────────────────────
   // Para cada avaliador, verifica quais temas ele mencionou nas suas respostas.
@@ -1092,10 +1092,10 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
     <div style="font-size:15px;font-weight:800;color:var(--accent);margin-bottom:10px;font-family:'Nunito',sans-serif">✅ Pontos Fortes</div>`;
 
   if(melhor){
-    html += `<p style="margin-bottom:8px">O critério <strong>${melhor.item}</strong> se destacou como o principal ponto forte (média <strong>${melhor.media}/5</strong>), demonstrando competência consolidada nessa área.</p>`;
+    html += `<p style="margin-bottom:8px">O critério <strong>${melhor.item}</strong> se destacou como o principal ponto forte (média <strong>${melhor.media}/10</strong>), demonstrando competência consolidada nessa área.</p>`;
   }
-  if(mediaNum>=3.5){
-    html += `<p style="margin-bottom:8px">O desempenho geral é <strong>${perf}</strong> (média <strong>${mediaGeral}/5</strong>), indicando que as entregas e comportamentos estão alinhados às expectativas da equipe.</p>`;
+  if(mediaNum>=7){
+    html += `<p style="margin-bottom:8px">O desempenho geral é <strong>${perf}</strong> (média <strong>${mediaGeral}/10</strong>), indicando que as entregas e comportamentos estão alinhados às expectativas da equipe.</p>`;
   }
   if(justificativas.length){
     html += `<p style="margin-bottom:8px">Os avaliadores reconhecem a dedicação e contribuição de <strong>${nome.split(' ')[0]}</strong> — os feedbacks escritos trazem exemplos concretos desse reconhecimento.</p>`;
@@ -1119,13 +1119,13 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
     <div style="font-size:15px;font-weight:800;color:#b5166e;margin-bottom:10px;font-family:'Nunito',sans-serif">🎯 Oportunidades de Melhoria</div>`;
 
   if(pior && sorted.length>1){
-    html += `<p style="margin-bottom:8px">O critério <strong>${pior.item}</strong> (média <strong>${pior.media}/5</strong>) apresenta o maior espaço de desenvolvimento — é onde o investimento em melhoria terá maior impacto visível para a equipe.</p>`;
+    html += `<p style="margin-bottom:8px">O critério <strong>${pior.item}</strong> (média <strong>${pior.media}/10</strong>) apresenta o maior espaço de desenvolvimento — é onde o investimento em melhoria terá maior impacto visível para a equipe.</p>`;
   }
   if(sugestoes.length){
     html += `<p style="margin-bottom:8px">As sugestões enviadas pelos avaliadores trazem direcionamentos práticos e observáveis. Traduzindo o que foi dito: a equipe espera melhorias nas <strong>entregas consistentes</strong> e na <strong>clareza das comunicações</strong>.</p>`;
   }
   if(itensValidos.length>1){
-    const medianos = sorted.filter(x=>parseFloat(x.media)>=2.5 && parseFloat(x.media)<3.8);
+    const medianos = sorted.filter(x=>parseFloat(x.media)>=5 && parseFloat(x.media)<7.6);
     if(medianos.length){
       html += `<p style="margin-bottom:8px">Os critérios <strong>${medianos.map(x=>x.item).join(', ')}</strong> estão em desenvolvimento — pequenas ações consistentes nessas áreas podem gerar avanços rápidos.</p>`;
     }
@@ -1179,8 +1179,8 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
 // ── HELPERS ───────────────────────────────────────────
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function toTitle(s){return String(s||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase())}
-function stars(v){if(isNaN(v))return'☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,5))+'☆'.repeat(Math.max(0,5-f))}
-function starsN(v){if(isNaN(v))return'☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,5))+'☆'.repeat(Math.max(0,5-f))}
+function stars(v){if(isNaN(v))return'☆☆☆☆☆☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,10))+'☆'.repeat(Math.max(0,10-f))}
+function starsN(v){if(isNaN(v))return'☆☆☆☆☆☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,10))+'☆'.repeat(Math.max(0,10-f))}
 function msg(id,type,html){const m={'ok':'n-ok','warn':'n-warn','err':'n-err'};document.getElementById(id).innerHTML=`<div class="notice ${m[type]||'n-ok'}">${html}</div>`}
 
 // ── LOADING ──────────────────────────────────────────
