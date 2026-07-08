@@ -1714,7 +1714,7 @@ async function renderResultado(){
     document.head.appendChild(st);
   }
 
-  if(liderCalc){
+  if(liderCalc && resModo!=='projeto'){
     await gerarAnaliseIA(nomeExib, liderCalc.mediaGeral, liderCalc.mediasPorItem, liderCalc.justificativas, liderCalc.sugestoes);
   }
 }
