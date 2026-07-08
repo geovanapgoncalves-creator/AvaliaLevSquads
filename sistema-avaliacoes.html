@@ -233,12 +233,21 @@
     <!-- CONFIG -->
     <div id="tc" class="tp active">
       <div class="card">
-        <div class="ctitle">Avaliações em andamento <span class="badge" id="st-badge">Nenhuma ativa</span></div>
+        <div class="ctitle" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <span>Avaliações em andamento <span class="badge" id="st-badge">Nenhuma ativa</span></span>
+          <button class="btn btn-d btn-sm" id="btn-encerrar-ciclo" onclick="abrirModalEncerrarCiclo()" style="display:none">🔒 Encerrar Ciclo Atual</button>
+        </div>
         <div id="current-info"></div>
       </div>
 
       <div class="card">
         <div class="ctitle">Nova Avaliação</div>
+
+        <div class="field">
+          <label>Ciclo desta avaliação</label>
+          <input type="text" id="inp-ciclo" placeholder="Ex: Julho/2026">
+          <div class="field-hint" style="font-size:12px;color:var(--muted);margin-top:4px">Avaliações de ciclos diferentes não se misturam no Dashboard, na Exportação ou no resultado do avaliado.</div>
+        </div>
 
         <div class="field">
           <label>Tipo de avaliação</label>
@@ -303,6 +312,10 @@
 
     <!-- DASHBOARD -->
     <div id="td" class="tp">
+      <div style="margin-bottom:14px">
+        <label style="font-weight:700;font-size:13px;display:block;margin-bottom:6px">📅 Ciclo</label>
+        <select id="sel-ciclo-dash" onchange="setCicloDash(this.value)" style="max-width:260px"></select>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:20px">
         <button type="button" class="btn btn-sm btn-p" id="dt-lider" onclick="setDashTipo('lider')">👤 Líderes</button>
         <button type="button" class="btn btn-sm btn-s" id="dt-projeto" onclick="setDashTipo('projeto')">📁 Projetos</button>
@@ -312,6 +325,10 @@
 
     <!-- EXPORTAR -->
     <div id="te" class="tp">
+      <div class="card">
+        <label style="font-weight:700;font-size:13px;display:block;margin-bottom:6px">📅 Ciclo</label>
+        <select id="sel-ciclo-exp" onchange="setCicloExp(this.value)" style="max-width:260px"></select>
+      </div>
       <div class="card">
         <div class="ctitle">👤 Exportar Avaliações de Líderes</div>
         <p style="font-size:14px;color:var(--muted);margin-bottom:16px">Baixe as avaliações de liderança em formato CSV (compatível com Excel).</p>
@@ -451,6 +468,19 @@
   </div>
 </div>
 
+<!-- MODAL ENCERRAR CICLO -->
+<div id="modal-encerrar-ciclo" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="mic">🔒</div>
+    <h3>Encerrar o ciclo atual?</h3>
+    <p>Todas as avaliações <strong>em andamento</strong> (líderes e projetos) serão encerradas de uma vez. As respostas já recebidas continuam salvas e disponíveis no Dashboard — isso apenas impede novas respostas para elas.</p>
+    <div class="mbtns">
+      <button class="btn btn-s" onclick="fecharModalEncerrarCiclo()">Cancelar</button>
+      <button class="btn btn-d" onclick="confirmarEncerrarCiclo()">🔒 Encerrar ciclo</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL LIMPAR BASE -->
 <div id="modal-limpar" class="modal-backdrop" style="display:none">
   <div class="modal">
@@ -546,7 +576,8 @@ async function refreshCache() {
       itens: a.itens,
       ativa: a.ativa,
       criadaEm: a.criada_em,
-      projetoLiderEmail: a.projeto_lider_email || null
+      projetoLiderEmail: a.projeto_lider_email || null,
+      ciclo: a.ciclo || 'Sem ciclo'
     }));
     _cache.ativas = _cache.avaliacoes.filter(a => a.ativa);
     // Get all respostas
@@ -569,9 +600,10 @@ async function refreshCache() {
   }
 }
 
-async function ss_ativar(tipo, nome, key, itens, projetoLiderEmail=null) {
+async function ss_ativar(tipo, nome, key, itens, projetoLiderEmail=null, ciclo=null) {
   const payload = { lider: nome, lider_email: key, tipo, itens, ativa: true };
   if(tipo==='projeto') payload.projeto_lider_email = projetoLiderEmail;
+  if(ciclo) payload.ciclo = ciclo;
   const rows = await sbPost('avaliacoes', payload);
   _cache.lastFetch = 0;
   return rows[0];
@@ -646,6 +678,24 @@ const PESSOAS = [
   {nome:"VINICIUS SANTOS AMORIM",        email:"vinicius.amorim@levnegocios.com.br"},
 ];
 const ADMIN_PW = 'admin123';
+
+// ── CICLOS ────────────────────────────────────────────
+function sugestaoCiclo(){
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const d=new Date();
+  return meses[d.getMonth()]+'/'+d.getFullYear();
+}
+function avPorId(id){
+  return _cache.avaliacoes.find(a=>a.id===id);
+}
+function listaCiclos(){
+  const map={};
+  _cache.avaliacoes.forEach(a=>{
+    const c=a.ciclo||'Sem ciclo';
+    if(!map[c] || new Date(a.criadaEm) > new Date(map[c])) map[c]=a.criadaEm;
+  });
+  return Object.keys(map).sort((x,y)=> new Date(map[y]) - new Date(map[x]));
+}
 
 // ── INIT ─────────────────────────────────────────────
 refreshCache().then(initRealtime).catch(e=>console.error('[Init] erro ao carregar dados iniciais:', e)); // carrega dados e conecta realtime
@@ -775,6 +825,8 @@ function initNovaAvaliacaoForm(){
   document.getElementById('sel-lider').value='';
   const slp=document.getElementById('sel-lider-projeto'); if(slp) slp.value='';
   document.getElementById('inp-projeto').value='';
+  const ic=document.getElementById('inp-ciclo');
+  if(ic && !ic.value.trim()) ic.value=sugestaoCiclo();
   adminProjetos=[];
   renderProjetosList();
   adminItens=[];
@@ -784,12 +836,15 @@ function initNovaAvaliacaoForm(){
 async function renderAtivasList(){
   const s=_cache;
   const badge=document.getElementById('st-badge');
+  const btnEncerrar=document.getElementById('btn-encerrar-ciclo');
   if(s.ativas.length){
     badge.textContent=`🟢 ${s.ativas.length} em andamento`;
     badge.className='badge';
+    if(btnEncerrar) btnEncerrar.style.display='inline-flex';
   } else {
     badge.textContent='Nenhuma ativa';
     badge.className='badge badge-o';
+    if(btnEncerrar) btnEncerrar.style.display='none';
   }
   const el=document.getElementById('current-info');
   if(!s.ativas.length){
@@ -808,6 +863,7 @@ async function renderAtivasList(){
             <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${isProjeto?'📁 Projeto':'👤 Líder'}</div>
             <div style="font-size:17px;font-weight:700">${esc(displayNome(av))}</div>
             ${isProjeto&&av.projetoLiderEmail?`<div style="font-size:12px;color:var(--muted)">Responsável: ${esc(nomeAlvoPorKey(av.projetoLiderEmail))}</div>`:''}
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">📅 ${esc(av.ciclo||'Sem ciclo')}</div>
           </div>
           <div style="flex:1;min-width:200px">
             <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${responderam} de ${avaliadores.length} avaliadores responderam</div>
@@ -834,6 +890,8 @@ let _busy=false;
 async function ativar(){
   if(_busy)return;
 
+  const ciclo=(document.getElementById('inp-ciclo').value||'').trim() || sugestaoCiclo();
+
   if(_tipoAval==='lider'){
     const itens=adminItens.filter(x=>x.trim());
     if(itens.length<1)return msg('cfg-msg','err','Adicione pelo menos 1 critério de avaliação.');
@@ -845,7 +903,7 @@ async function ativar(){
     const s=await gs();
     const conflito=s.ativas.find(a=>a.tipo==='lider' && a.email===key);
     if(conflito){
-      _pending={tipo:'lider', nome, key, itens, conflitoId:conflito.id};
+      _pending={tipo:'lider', nome, key, itens, ciclo, conflitoId:conflito.id};
       const avaliadores=PESSOAS.filter(p=>p.email!==conflito.email);
       const responderam=s.resp.filter(r=>r.avaliacaoId===conflito.id).length;
       document.getElementById('modal-info').innerHTML=
@@ -855,7 +913,7 @@ async function ativar(){
       return;
     }
     _busy=true;
-    try{ await _executarAtivacao('lider', nome, key, itens); } finally { _busy=false; }
+    try{ await _executarAtivacao('lider', nome, key, itens, ciclo); } finally { _busy=false; }
     return;
   }
 
@@ -875,14 +933,14 @@ async function ativar(){
 
   const conflitos=lista.filter(x=>x.conflitoId);
   if(conflitos.length){
-    _pendingProjetos={liderNome:liderP.nome, liderEmail:liderP.email, itens:itensProjeto, lista};
+    _pendingProjetos={liderNome:liderP.nome, liderEmail:liderP.email, itens:itensProjeto, lista, ciclo};
     document.getElementById('modal-info-projetos').innerHTML=conflitos.map(c=>`<div>📁 <strong>${esc(c.nome)}</strong></div>`).join('');
     document.getElementById('modal-sobrescrever-projetos').style.display='flex';
     return;
   }
 
   _busy=true;
-  try{ await _executarAtivacaoProjetos(liderP.nome, liderP.email, itensProjeto, lista); } finally { _busy=false; }
+  try{ await _executarAtivacaoProjetos(liderP.nome, liderP.email, itensProjeto, lista, ciclo); } finally { _busy=false; }
 }
 
 function fecharModal(){
@@ -896,7 +954,7 @@ async function confirmarSobrescrever(){
     _busy=true;
     try{
       await ss_encerrarAvaliacao(_pending.conflitoId);
-      await _executarAtivacao(_pending.tipo, _pending.nome, _pending.key, _pending.itens);
+      await _executarAtivacao(_pending.tipo, _pending.nome, _pending.key, _pending.itens, _pending.ciclo);
     }catch(e){
       msg('cfg-msg','err','Erro ao ativar: '+e.message);
     }finally{
@@ -916,8 +974,8 @@ async function confirmarSobrescreverProjetos(){
   if(_pendingProjetos && !_busy){
     _busy=true;
     try{
-      const {liderNome, liderEmail, itens, lista} = _pendingProjetos;
-      await _executarAtivacaoProjetos(liderNome, liderEmail, itens, lista);
+      const {liderNome, liderEmail, itens, lista, ciclo} = _pendingProjetos;
+      await _executarAtivacaoProjetos(liderNome, liderEmail, itens, lista, ciclo);
     }catch(e){
       msg('cfg-msg','err','Erro ao ativar: '+e.message);
     }finally{
@@ -927,9 +985,9 @@ async function confirmarSobrescreverProjetos(){
   _pendingProjetos=null;
 }
 
-async function _executarAtivacao(tipo, nome, key, itens){
+async function _executarAtivacao(tipo, nome, key, itens, ciclo){
   try{
-    await ss_ativar(tipo, nome, key, itens);
+    await ss_ativar(tipo, nome, key, itens, null, ciclo);
     await refreshCache();
     await syncAdmin();
     msg('cfg-msg','ok',`✅ Avaliação de <strong>${esc(tipo==='projeto'?nome:toTitle(nome))}</strong> ativada! Os avaliadores já podem responder.`);
@@ -938,13 +996,13 @@ async function _executarAtivacao(tipo, nome, key, itens){
   }
 }
 
-async function _executarAtivacaoProjetos(liderNome, liderEmail, itens, lista){
+async function _executarAtivacaoProjetos(liderNome, liderEmail, itens, lista, ciclo){
   try{
     for(const item of lista){
       if(item.conflitoId){
         await ss_encerrarAvaliacao(item.conflitoId);
       }
-      await ss_ativar('projeto', item.nome, item.key, itens, liderEmail);
+      await ss_ativar('projeto', item.nome, item.key, itens, liderEmail, ciclo);
     }
     await refreshCache();
     await syncAdmin();
@@ -969,6 +1027,35 @@ async function encerrarUma(id){
   }
 }
 
+// ── ENCERRAR CICLO ATUAL (em lote) ───────────────────
+function abrirModalEncerrarCiclo(){
+  document.getElementById('modal-encerrar-ciclo').style.display='flex';
+}
+function fecharModalEncerrarCiclo(){
+  document.getElementById('modal-encerrar-ciclo').style.display='none';
+}
+async function confirmarEncerrarCiclo(){
+  document.getElementById('modal-encerrar-ciclo').style.display='none';
+  if(_busy)return;
+  _busy=true;
+  showLoading('Encerrando ciclo atual...');
+  try{
+    const s=await gs();
+    for(const av of s.ativas){
+      await ss_encerrarAvaliacao(av.id);
+    }
+    await refreshCache();
+    await syncAdmin();
+    hideLoading();
+    msg('cfg-msg','ok','✅ Ciclo atual encerrado. Todas as avaliações em andamento foram fechadas — pronto para iniciar o próximo ciclo.');
+  }catch(e){
+    hideLoading();
+    msg('cfg-msg','err','Erro ao encerrar ciclo: '+e.message);
+  }finally{
+    _busy=false;
+  }
+}
+
 // ── DASHBOARD ────────────────────────────────────────
 let _dashTipo='lider';
 function setDashTipo(tipo){
@@ -979,29 +1066,47 @@ function setDashTipo(tipo){
   renderDash();
 }
 
+let _cicloDash=null;
+function buildCicloSelectDash(){
+  const sel=document.getElementById('sel-ciclo-dash');
+  if(!sel) return;
+  const ciclos=listaCiclos();
+  if(!ciclos.length){ sel.innerHTML='<option value="">—</option>'; _cicloDash=null; return; }
+  sel.innerHTML=ciclos.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  if(!ciclos.includes(_cicloDash)) _cicloDash=ciclos[0];
+  sel.value=_cicloDash;
+}
+function setCicloDash(v){ _cicloDash=v; renderDash(); }
+
 async function renderDash(){
   const s=await gs();
+  buildCicloSelectDash();
   const el=document.getElementById('dash-content');
-  const respFiltrados=s.resp.filter(r=>tipoAlvoPorKey(r.liderEmail)===_dashTipo);
+  const cicloSel=_cicloDash||'Sem ciclo';
+  const idsCiclo=new Set(s.avaliacoes.filter(a=>(a.ciclo||'Sem ciclo')===cicloSel).map(a=>a.id));
+  const respCiclo=s.resp.filter(r=>idsCiclo.has(r.avaliacaoId));
+  const respFiltrados=respCiclo.filter(r=>tipoAlvoPorKey(r.liderEmail)===_dashTipo);
   if(!respFiltrados.length){
-    el.innerHTML=`<div class="empty"><div class="ic">📭</div><strong>Nenhuma avaliação de ${_dashTipo==='projeto'?'projeto':'líder'} respondida ainda</strong><p>Os resultados aparecerão aqui assim que os avaliadores enviarem.</p></div>`;
+    el.innerHTML=`<div class="empty"><div class="ic">📭</div><strong>Nenhuma avaliação de ${_dashTipo==='projeto'?'projeto':'líder'} respondida ainda neste ciclo</strong><p>Os resultados aparecerão aqui assim que os avaliadores enviarem.</p></div>`;
     return;
   }
 
-  // Agrupa por alvo avaliado (líder ou projeto)
-  const lideresAvaliados=[...new Set(respFiltrados.map(r=>r.liderEmail))];
+  // Agrupa por avaliação específica (cada ativação corresponde a um ciclo daquele alvo)
+  const avaliacaoIds=[...new Set(respFiltrados.map(r=>r.avaliacaoId))];
   let html='';
 
-  lideresAvaliados.forEach(lEmail=>{
+  avaliacaoIds.forEach(avId=>{
+    const avInfo=avPorId(avId);
+    if(!avInfo) return;
+    const lEmail=avInfo.email;
     const lNome=nomeAlvoPorKey(lEmail);
-    const lTipo=tipoAlvoPorKey(lEmail);
-    const resps=respFiltrados.filter(r=>r.liderEmail===lEmail);
+    const lTipo=avInfo.tipo;
+    const resps=respFiltrados.filter(r=>r.avaliacaoId===avId);
     const avaliadores=PESSOAS.filter(p=>p.email!==lEmail);
     const responderam=resps.map(r=>r.email);
     const faltam=avaliadores.filter(p=>!responderam.includes(p.email));
-    const avInfo=avPorKey(lEmail);
-    const itens=avInfo?.itens || (resps[0]?.notas?Object.keys(resps[0].notas):[]);
-    const responsavel = lTipo==='projeto' && avInfo?.projetoLiderEmail ? nomeAlvoPorKey(avInfo.projetoLiderEmail) : null;
+    const itens=avInfo.itens || (resps[0]?.notas?Object.keys(resps[0].notas):[]);
+    const responsavel = lTipo==='projeto' && avInfo.projetoLiderEmail ? nomeAlvoPorKey(avInfo.projetoLiderEmail) : null;
 
     // Médias
     const mediaGeral=(()=>{const vm=resps.map(r=>{const v=Object.values(r.notas||{}).filter(x=>typeof x==='number');return v.length?v.reduce((a,b)=>a+b,0)/v.length:null}).filter(x=>x!==null);return vm.length?(vm.reduce((a,b)=>a+b,0)/vm.length).toFixed(1):'0.0'})();
@@ -1033,13 +1138,13 @@ async function renderDash(){
         ${resps.map((r,ri)=>{
           const notas=Object.values(r.notas||{}).filter(v=>v!=='N/A');
           const med=notas.length?(notas.reduce((a,b)=>a+Number(b),0)/notas.length).toFixed(1):'—';
-          const rid=`${lEmail}_${ri}`;
+          const rid=`${avId}_${ri}`;
           return `<div class="rrow" id="rrow-${rid}">
             <div class="rhead">
               <div><div class="rname">${r.email}</div><div class="remail">${r.data}</div></div>
               <div style="display:flex;align-items:center;gap:12px">
                 <div class="rscore">${med}<span style="font-size:12px;color:var(--muted);font-family:'Nunito',sans-serif;font-weight:400"> /10</span></div>
-                <button class="btn btn-d btn-sm" onclick="confirmarExcluirResposta('${esc(r.email)}','${esc(lEmail)}','${rid}')"
+                <button class="btn btn-d btn-sm" onclick="confirmarExcluirResposta('${esc(r.email)}','${esc(lEmail)}','${avId}')"
                   style="padding:5px 10px;font-size:12px" title="Excluir esta avaliação">🗑️</button>
               </div>
             </div>
@@ -1065,13 +1170,28 @@ async function renderDash(){
 }
 
 // ── EXPORTAR ─────────────────────────────────────────
+let _cicloExp=null;
+function buildCicloSelectExp(){
+  const sel=document.getElementById('sel-ciclo-exp');
+  if(!sel) return;
+  const ciclos=listaCiclos();
+  if(!ciclos.length){ sel.innerHTML='<option value="">—</option>'; _cicloExp=null; return; }
+  sel.innerHTML=ciclos.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  if(!ciclos.includes(_cicloExp)) _cicloExp=ciclos[0];
+  sel.value=_cicloExp;
+}
+function setCicloExp(v){ _cicloExp=v; renderExp(); }
+
 async function renderExp(){
   const s=await gs();
+  buildCicloSelectExp();
+  const cicloSel=_cicloExp||'Sem ciclo';
+  const idsCiclo=new Set(s.avaliacoes.filter(a=>(a.ciclo||'Sem ciclo')===cicloSel).map(a=>a.id));
   ['lider','projeto'].forEach(tipo=>{
     const el=document.getElementById(tipo==='lider'?'exp-tbl-lider':'exp-tbl-projeto');
     if(!el) return;
-    const resp=s.resp.filter(r=>tipoAlvoPorKey(r.liderEmail)===tipo);
-    if(!resp.length){el.innerHTML='<p style="color:var(--muted);font-size:14px">Nenhum dado para exportar.</p>';return}
+    const resp=s.resp.filter(r=>idsCiclo.has(r.avaliacaoId) && tipoAlvoPorKey(r.liderEmail)===tipo);
+    if(!resp.length){el.innerHTML='<p style="color:var(--muted);font-size:14px">Nenhum dado para exportar neste ciclo.</p>';return}
     if(tipo==='lider'){
       const itens=[...new Set(resp.flatMap(r=>Object.keys(r.notas||{})))];
       const heads=['Líder Avaliado','Avaliador','Data',...itens,'Média','Justificativa','Sugestões'];
@@ -1088,7 +1208,7 @@ async function renderExp(){
       const heads=['Projeto','Líder Responsável','Avaliador','Data','Nota','Comentários','Sugestões'];
       el.innerHTML=`<table class="etable"><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
         ${resp.map(r=>{
-          const avInfo=avPorKey(r.liderEmail);
+          const avInfo=avPorId(r.avaliacaoId);
           const responsavel=avInfo?.projetoLiderEmail?nomeAlvoPorKey(avInfo.projetoLiderEmail):'';
           const pNome=nomeAlvoPorKey(r.liderEmail);
           const notaVal=Object.values(r.notas||{}).find(v=>typeof v==='number');
@@ -1102,34 +1222,36 @@ async function renderExp(){
 
 async function exportCSV(tipo){
   const s=await gs();
-  const resp=s.resp.filter(r=>tipoAlvoPorKey(r.liderEmail)===tipo);
+  const cicloSel=_cicloExp||'Sem ciclo';
+  const idsCiclo=new Set(s.avaliacoes.filter(a=>(a.ciclo||'Sem ciclo')===cicloSel).map(a=>a.id));
+  const resp=s.resp.filter(r=>idsCiclo.has(r.avaliacaoId) && tipoAlvoPorKey(r.liderEmail)===tipo);
   if(!resp.length)return;
   let heads, rows;
   if(tipo==='lider'){
     const itens=[...new Set(resp.flatMap(r=>Object.keys(r.notas||{})))];
-    heads=['Líder Avaliado','Avaliador','Data',...itens,'Média','Justificativa','Sugestões'];
+    heads=['Líder Avaliado','Avaliador','Data',...itens,'Média','Justificativa','Sugestões','Ciclo'];
     rows=resp.map(r=>{
       const notas=itens.map(i=>r.notas?.[i]||'');
       const numericas=notas.filter(n=>typeof n==='number');
       const med=numericas.length?(numericas.reduce((a,b)=>a+b,0)/numericas.length).toFixed(1):'';
       const lNome=nomeAlvoPorKey(r.liderEmail);
-      return [lNome,r.email,r.data,...notas,med,r.just||'',r.sug||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
+      return [lNome,r.email,r.data,...notas,med,r.just||'',r.sug||'',cicloSel].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
     });
   } else {
-    heads=['Projeto','Líder Responsável','Avaliador','Data','Nota','Comentários','Sugestões'];
+    heads=['Projeto','Líder Responsável','Avaliador','Data','Nota','Comentários','Sugestões','Ciclo'];
     rows=resp.map(r=>{
-      const avInfo=avPorKey(r.liderEmail);
+      const avInfo=avPorId(r.avaliacaoId);
       const responsavel=avInfo?.projetoLiderEmail?nomeAlvoPorKey(avInfo.projetoLiderEmail):'';
       const pNome=nomeAlvoPorKey(r.liderEmail);
       const notaVal=Object.values(r.notas||{}).find(v=>typeof v==='number');
       const nota=(notaVal!==undefined)?notaVal:'';
-      return [pNome,responsavel,r.email,r.data,nota,r.just||'',r.sug||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
+      return [pNome,responsavel,r.email,r.data,nota,r.just||'',r.sug||'',cicloSel].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
     });
   }
   const csv=[heads.join(','),...rows].join('\n');
-  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);a.download=`avaliacoes_${tipo}_lev_${Date.now()}.csv`;a.click();
+  a.href=URL.createObjectURL(blob);a.download=`avaliacoes_${tipo}_${cicloSel.replace(/[^a-zA-Z0-9]+/g,'_')}_${Date.now()}.csv`;a.click();
 }
 
 // ── AVALIADOR LOGIN ───────────────────────────────────
@@ -1308,6 +1430,8 @@ async function salvar(){
 
 // ── RESULTADO: LOGIN ─────────────────────────────────
 let resEmail='';
+let resPessoa=null, resAvLider=[], resAvProjeto=[], resCiclos=[], _cicloRes=null;
+
 async function doResultLogin(){
   const email=document.getElementById('res-email').value.trim().toLowerCase();
   const err=document.getElementById('res-err');
@@ -1329,28 +1453,62 @@ async function doResultLogin(){
 
   const avaliacoesLider=s.avaliacoes.filter(a=>a.tipo==='lider' && a.email===email);
   const avaliacoesProjeto=s.avaliacoes.filter(a=>a.tipo==='projeto' && a.projetoLiderEmail===email);
-  const idsLider=new Set(avaliacoesLider.map(a=>a.id));
-  const idsProjeto=new Set(avaliacoesProjeto.map(a=>a.id));
-  const respLider=s.resp.filter(r=>idsLider.has(r.avaliacaoId));
-  const respProjeto=s.resp.filter(r=>idsProjeto.has(r.avaliacaoId));
+  const idsLiderTodas=new Set(avaliacoesLider.map(a=>a.id));
+  const idsProjetoTodas=new Set(avaliacoesProjeto.map(a=>a.id));
+  const temResp = s.resp.some(r=>idsLiderTodas.has(r.avaliacaoId) || idsProjetoTodas.has(r.avaliacaoId));
 
-  if(!respLider.length && !respProjeto.length){err.style.display='block';err.textContent='Nenhuma avaliação encontrada para este e-mail ainda. Aguarde o ciclo ser concluído.';return}
+  if(!avaliacoesLider.length && !avaliacoesProjeto.length){err.style.display='block';err.textContent='Nenhuma avaliação encontrada para este e-mail ainda. Aguarde o ciclo ser concluído.';return}
   err.style.display='none';
   resEmail=email;
+  resPessoa=pessoa;
+  resAvLider=avaliacoesLider;
+  resAvProjeto=avaliacoesProjeto;
+
+  // Monta lista de ciclos em que esta pessoa tem avaliação (líder ou projeto), do mais recente para o mais antigo
+  const todasAvs=[...avaliacoesLider,...avaliacoesProjeto];
+  const map={};
+  todasAvs.forEach(a=>{
+    const c=a.ciclo||'Sem ciclo';
+    if(!map[c] || new Date(a.criadaEm) > new Date(map[c])) map[c]=a.criadaEm;
+  });
+  resCiclos=Object.keys(map).sort((x,y)=> new Date(map[y]) - new Date(map[x]));
+  _cicloRes=resCiclos[0]||null;
+
   document.getElementById('res-nav-email').textContent=email;
-  await renderResultado(pessoa, respLider, avaliacoesProjeto, respProjeto);
+  await renderResultado();
   goTo('resultado-dash');
 }
 
-async function renderResultado(pessoa, respsLider, avaliacoesProjeto, respsProjeto){
-  const el=document.getElementById('resultado-content');
+function setCicloRes(v){ _cicloRes=v; renderResultado(); }
+
+async function renderResultado(){
+  const s=_cache;
+  const pessoa=resPessoa;
   const nomeExib=toTitle(pessoa.nome);
+  const cicloSel=_cicloRes||'Sem ciclo';
+
+  const avLiderCiclo=resAvLider.filter(a=>(a.ciclo||'Sem ciclo')===cicloSel);
+  const avProjetoCiclo=resAvProjeto.filter(a=>(a.ciclo||'Sem ciclo')===cicloSel);
+  const idsLider=new Set(avLiderCiclo.map(a=>a.id));
+  const idsProjeto=new Set(avProjetoCiclo.map(a=>a.id));
+  const respsLider=s.resp.filter(r=>idsLider.has(r.avaliacaoId));
+  const respsProjeto=s.resp.filter(r=>idsProjeto.has(r.avaliacaoId));
+
+  const el=document.getElementById('resultado-content');
+
+  const htmlSeletor = resCiclos.length>1 ? `
+    <div class="card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="font-weight:700;font-size:13px;white-space:nowrap">📅 Ciclo:</label>
+      <select id="sel-ciclo-res" onchange="setCicloRes(this.value)" style="max-width:240px">
+        ${resCiclos.map(c=>`<option value="${esc(c)}" ${c===cicloSel?'selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+    </div>` : '';
 
   let htmlLider='';
   let liderCalc=null;
 
   if(respsLider.length){
-    const avInfo=avPorKey(pessoa.email);
+    const avInfo=avLiderCiclo[0];
     const itens=avInfo?.itens || (respsLider[0]?.notas?Object.keys(respsLider[0].notas):[]);
     const mediaGeral=(()=>{const vm=respsLider.map(r=>{const v=Object.values(r.notas||{}).filter(x=>typeof x==='number');return v.length?v.reduce((a,b)=>a+b,0)/v.length:null}).filter(x=>x!==null);return vm.length?(vm.reduce((a,b)=>a+b,0)/vm.length).toFixed(1):'0.0'})();
     const mediasPorItem=itens.map(item=>{
@@ -1363,7 +1521,7 @@ async function renderResultado(pessoa, respsLider, avaliacoesProjeto, respsProje
 
     htmlLider=`
     <div class="lbanner" style="background:linear-gradient(135deg,var(--pink) 0%,#b5166e 100%)">
-      <div class="ey">Meu Resultado como Líder</div>
+      <div class="ey">Meu Resultado como Líder · ${esc(cicloSel)}</div>
       <h2>${nomeExib}</h2>
       <div class="sub">${respsLider.length} avaliação(ões) recebida(s)</div>
     </div>
@@ -1415,9 +1573,9 @@ async function renderResultado(pessoa, respsLider, avaliacoesProjeto, respsProje
     `;
   }
 
-  const htmlProjetos = renderResultadoProjetosHTML(respsLider.length, avaliacoesProjeto, respsProjeto);
+  const htmlProjetos = renderResultadoProjetosHTML(respsLider.length, avProjetoCiclo, respsProjeto);
 
-  el.innerHTML = htmlLider + htmlProjetos;
+  el.innerHTML = htmlSeletor + htmlLider + htmlProjetos;
 
   // Adiciona spinner CSS se não existir
   if(!document.getElementById('spinner-style')){
@@ -1733,12 +1891,12 @@ async function confirmarLimpar(){
 // ── EXCLUIR RESPOSTA INDIVIDUAL ──────────────────────
 let _excluirEmail = null;
 let _excluirLiderEmail = null;
-let _excluirRowId = null;
+let _excluirAvaliacaoId = null;
 
-function confirmarExcluirResposta(email, liderEmail, rowId){
+function confirmarExcluirResposta(email, liderEmail, avaliacaoId){
   _excluirEmail = email;
   _excluirLiderEmail = liderEmail;
-  _excluirRowId = rowId;
+  _excluirAvaliacaoId = avaliacaoId;
   document.getElementById('excluir-resp-info').innerHTML =
     `<strong>Avaliador:</strong> ${email}<br><strong>Alvo avaliado:</strong> ${esc(nomeAlvoPorKey(liderEmail))}`;
   document.getElementById('modal-excluir-resp').style.display='flex';
@@ -1746,16 +1904,16 @@ function confirmarExcluirResposta(email, liderEmail, rowId){
 
 function fecharModalExcluirResp(){
   document.getElementById('modal-excluir-resp').style.display='none';
-  _excluirEmail=null; _excluirLiderEmail=null; _excluirRowId=null;
+  _excluirEmail=null; _excluirLiderEmail=null; _excluirAvaliacaoId=null;
 }
 
 async function executarExcluirResposta(){
   document.getElementById('modal-excluir-resp').style.display='none';
   showLoading('Excluindo avaliação...');
   try{
-    // Busca os IDs exatos das respostas deste avaliador para este líder
+    // Busca o registro exato desta avaliação especifica (escopo por avaliacao_id evita apagar resposta de outro ciclo)
     const resps = await sbGet('respostas',
-      `select=id&avaliador_email=eq.${encodeURIComponent(_excluirEmail)}&lider_email=eq.${encodeURIComponent(_excluirLiderEmail)}`
+      `select=id&avaliacao_id=eq.${encodeURIComponent(_excluirAvaliacaoId)}&avaliador_email=eq.${encodeURIComponent(_excluirEmail)}`
     );
     if(!resps.length) throw new Error('Nenhuma resposta encontrada para excluir.');
 
@@ -1786,7 +1944,7 @@ async function executarExcluirResposta(){
     msg('cfg-msg','err','Erro ao excluir: '+e.message);
     console.error('Erro excluir resposta:',e);
   }
-  _excluirEmail=null; _excluirLiderEmail=null; _excluirRowId=null;
+  _excluirEmail=null; _excluirLiderEmail=null; _excluirAvaliacaoId=null;
 }
 
 </script>
