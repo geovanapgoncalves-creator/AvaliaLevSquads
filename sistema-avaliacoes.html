@@ -519,6 +519,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 
+
 // ── SUPABASE CONFIG ──────────────────────────────────
 const SB_URL = 'https://gfrluwtkdmumgpthhhpn.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmcmx1d3RrZG11bWdwdGhoaHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzUxNzMsImV4cCI6MjA5ODY1MTE3M30.Sb-WgBG8aceNwE3a63si53BzSg3TV6SYXjViYJZkqO4';
@@ -1121,14 +1122,14 @@ async function renderDash(){
       ${responsavel?`<div style="font-size:13px;color:var(--muted);margin-top:-8px;margin-bottom:14px">Responsável: <strong>${esc(responsavel)}</strong></div>`:''}
       <div class="sgrid">
         <div class="scard"><div class="num">${mediaGeral}</div><div class="lbl">Média geral (de 10)</div></div>
-        <div class="scard"><div class="num">${stars(parseFloat(mediaGeral))}</div><div class="lbl">Classificação</div></div>
+        <div class="scard">${nivelServicoHTML(parseFloat(mediaGeral),12)}<div class="num">${stars(parseFloat(mediaGeral))}</div><div class="lbl">Classificação</div></div>
         <div class="scard"><div class="num">${resps.length}/${avaliadores.length}</div><div class="lbl">Responderam</div></div>
       </div>
 
       <div style="margin-bottom:20px">
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">Médias por Critério</div>
         <div class="ritems">
-          ${itens.map((item,i)=>`<div class="ri"><div class="ril">${esc(item)}</div><div class="ris">${mediasPorItem[i]}</div><div style="color:var(--pink);font-size:12px">${starsN(parseFloat(mediasPorItem[i]))}</div></div>`).join('')}
+          ${itens.map((item,i)=>`<div class="ri"><div class="ril">${esc(item)}</div><div class="ris">${mediasPorItem[i]}</div>${nivelServicoHTML(parseFloat(mediasPorItem[i]),10)}<div style="color:var(--pink);font-size:12px">${starsN(parseFloat(mediasPorItem[i]))}</div></div>`).join('')}
         </div>
       </div>
 
@@ -1528,7 +1529,7 @@ async function renderResultado(){
 
     <div class="sgrid">
       <div class="scard"><div class="num">${mediaGeral}</div><div class="lbl">Média geral (de 10)</div></div>
-      <div class="scard"><div class="num" style="font-size:22px">${stars(parseFloat(mediaGeral))}</div><div class="lbl">Classificação</div></div>
+      <div class="scard">${nivelServicoHTML(parseFloat(mediaGeral),12)}<div class="num" style="font-size:22px">${stars(parseFloat(mediaGeral))}</div><div class="lbl">Classificação</div></div>
       <div class="scard"><div class="num">${respsLider.length}</div><div class="lbl">Avaliadores responderam</div></div>
     </div>
 
@@ -1539,6 +1540,7 @@ async function renderResultado(){
           <div class="ri">
             <div class="ril">${esc(item)}</div>
             <div class="ris" style="color:var(--pink)">${media}</div>
+            ${nivelServicoHTML(parseFloat(media),10)}
             <div style="color:var(--pink);font-size:12px">${starsN(parseFloat(media))}</div>
           </div>`).join('')}
       </div>
@@ -1618,7 +1620,7 @@ function renderResultadoProjetosHTML(temSecaoLider, avaliacoesProjeto, respsProj
       <div class="ctitle" style="font-size:15px">📁 ${esc(av.lider)} <span class="badge">${resps.length} respostas</span></div>
       <div class="sgrid">
         <div class="scard"><div class="num">${media}</div><div class="lbl">Nota média (de 10)</div></div>
-        <div class="scard"><div class="num" style="font-size:22px">${stars(parseFloat(media))}</div><div class="lbl">Classificação</div></div>
+        <div class="scard">${nivelServicoHTML(parseFloat(media),12)}<div class="num" style="font-size:22px">${stars(parseFloat(media))}</div><div class="lbl">Classificação</div></div>
         <div class="scard"><div class="num">${resps.length}</div><div class="lbl">Avaliadores responderam</div></div>
       </div>
       ${(comentarios.length||sugestoes.length)?`
@@ -1703,6 +1705,16 @@ async function gerarAnaliseIA(nome, mediaGeral, mediasPorItem, justificativas, s
 
   // Monta HTML da análise
   let html = '';
+
+  // Diagnóstico por nível de serviço (hipótese + direcionamento sugeridos pela faixa de nota geral)
+  const nivelDiag = nivelServico(mediaNum);
+  if(nivelDiag){
+    html += `<div style="background:${nivelDiag.cor}18;border:1.5px solid ${nivelDiag.cor};border-radius:12px;padding:18px 20px;margin-bottom:20px">
+      <div style="font-size:15px;font-weight:800;color:${nivelDiag.cor};margin-bottom:10px;font-family:'Nunito',sans-serif">${nivelDiag.emoji} Diagnóstico: ${nivelDiag.label}</div>
+      <p style="margin-bottom:10px"><strong>Hipótese:</strong> ${nivelDiag.hipotese}</p>
+      <p style="margin-bottom:0"><strong>Direcionamento possível:</strong> ${nivelDiag.direcionamento}</p>
+    </div>`;
+  }
 
   // Pontos Fortes
   html += `<div style="margin-bottom:20px">
@@ -1819,6 +1831,32 @@ function tipoAlvoPorKey(key){
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function toTitle(s){return String(s||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase())}
+
+
+// ── NÍVEL DE SERVIÇO (classificação por faixa de nota) ──────────────
+const NIVEIS_DIAGNOSTICO = [
+  { min:9, emoji:'\ud83d\ude80', label:'Zona de Excelência', cor:'#7B3FA0',
+    hipotese:'Esta faixa de pontuação sinaliza um cenário em que a liderança e a área parecem ser percebidas como aliadas estratégicas e geradoras de valor perceptível. Pode refletir um alto nível de sinergia mútua, onde as entregas e a postura profissional tendem a superar as expectativas habituais dos parceiros de trabalho.',
+    direcionamento:'Recomenda-se avaliar formas de manter a consistência desses resultados sem sobrecarregar as estruturas existentes. Pode ser oportuno considerar como essas práticas bem-sucedidas poderiam, eventualmente, ser compartilhadas ou servir de referência para o desenvolvimento de outras dinâmicas na organização.' },
+  { min:7, emoji:'\ud83d\udfe2', label:'Consolidado/Atende', cor:'#1F8A4C',
+    hipotese:'O resultado indica indícios de uma relação de fornecimento considerada madura e funcional. Supõe-se que a liderança e a área consigam cumprir o combinado de forma regular. No entanto, por se situar em uma zona que pode ser interpretada como transacional, há a possibilidade de que a relação de confiança ainda seja suscetível a desgastes caso ocorram imprevistos.',
+    direcionamento:'Sugere-se a possibilidade de buscar ir além do escopo estrito das solicitações. Pode ser interessante estudar maneiras de agregar pequenos diferenciais às entregas da área, buscando entender o contexto do cliente interno de forma mais ampla — o que poderia favorecer a transição de um papel de fornecedor para o de parceiro estratégico.' },
+  { min:5, emoji:'\ud83d\udfe1', label:'Em Desenvolvimento', cor:'#B8790A',
+    hipotese:'Este intervalo tende a sinalizar que a área talvez consiga atender aos requisitos básicos em momentos específicos, mas sugere a existência de oscilações na constância das entregas. Pode indicar que, embora haja esforço de parceria por parte da liderança, a operação ou o produto entregue talvez ainda demandem ajustes para gerar maior previsibilidade.',
+    direcionamento:'Considera-se produtivo mapear as variáveis que podem estar causando essas flutuações. A análise sugere focar na padronização de rotinas e na busca por uma comunicação mais fluida, o que poderia potencialmente diminuir a necessidade de acompanhamento ou cobrança por parte dos clientes internos.' },
+  { min:0, emoji:'\ud83d\udd34', label:'Desalinhado/Insuficiente', cor:'#C0392B',
+    hipotese:'Essa pontuação pode sugerir que a relação de fornecimento interno talvez esteja enfrentando ruídos consideráveis ou desalinhamento de expectativas. Indica a possibilidade de que prazos, fluxos de comunicação ou a percepção sobre a qualidade das entregas estejam gerando algum tipo de barreira no dia a dia.',
+    direcionamento:'Pode ser recomendável abrir canais de escuta ativa com as áreas parceiras. Parece oportuno avaliar se os acordos de nível de serviço (SLAs) necessitam de revisão ou se há processos internos que possam estar impactando negativamente a percepção do cliente interno.' },
+];
+function nivelServico(v){
+  if(v===null||v===undefined||isNaN(v))return null;
+  return NIVEIS_DIAGNOSTICO.find(n=>v>=n.min)||NIVEIS_DIAGNOSTICO[NIVEIS_DIAGNOSTICO.length-1];
+}
+function nivelServicoHTML(v,fs){
+  const n=nivelServico(v);
+  if(!n)return'';
+  return `<div style="font-size:${fs||11}px;font-weight:800;color:${n.cor};margin-bottom:5px;letter-spacing:.2px">${n.emoji} ${n.label}</div>`;
+}
 function stars(v){if(isNaN(v))return'☆☆☆☆☆☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,10))+'☆'.repeat(Math.max(0,10-f))}
 function starsN(v){if(isNaN(v))return'☆☆☆☆☆☆☆☆☆☆';const f=Math.round(v);return'★'.repeat(Math.min(f,10))+'☆'.repeat(Math.max(0,10-f))}
 function msg(id,type,html){const m={'ok':'n-ok','warn':'n-warn','err':'n-err'};document.getElementById(id).innerHTML=`<div class="notice ${m[type]||'n-ok'}">${html}</div>`}
@@ -1946,6 +1984,7 @@ async function executarExcluirResposta(){
   }
   _excluirEmail=null; _excluirLiderEmail=null; _excluirAvaliacaoId=null;
 }
+
 
 </script>
 </body>
