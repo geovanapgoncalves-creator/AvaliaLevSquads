@@ -2007,6 +2007,7 @@ async function renderUsuarios(){
       <td><span class="${u.ativo?'pill-ativo':'pill-inativo'}">${u.ativo?'Ativo':'Inativo'}</span></td>
       <td style="white-space:nowrap;display:flex;gap:6px">
         <button class="btn btn-s btn-sm" onclick="editarUsuario('${u.id}')">✏️ Editar</button>
+        <button class="btn btn-s btn-sm" onclick="resetarSenhaUsuario('${u.id}')">🔑 Resetar senha</button>
         <button class="btn ${u.ativo?'btn-d':'btn-p'} btn-sm" onclick="toggleAtivoUsuario('${u.id}',${!u.ativo})">${u.ativo?'🔒 Inativar':'🔓 Reativar'}</button>
       </td>
     </tr>`).join('');
@@ -2097,6 +2098,28 @@ async function toggleAtivoUsuario(id, novoAtivo){
     await renderUsuarios();
   }catch(e){
     alert('Erro ao atualizar o status do usuário.');
+  }
+}
+
+const SENHA_PADRAO_TEMP = 'lev@2026';
+
+async function resetarSenhaUsuario(id){
+  const u=_usuariosCache.find(x=>x.id===id);
+  if(!u) return;
+  const ok=confirm(`Resetar a senha de ${toTitle(u.nome)} para a senha padrão temporária?\n\nSenha temporária: ${SENHA_PADRAO_TEMP}\n\nA pessoa precisará definir uma nova senha no próximo login.`);
+  if(!ok) return;
+  try{
+    const senhaHash=await sha256Hex(SENHA_PADRAO_TEMP);
+    const r=await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${id}`,{
+      method:'PATCH',
+      headers:{'apikey':SB_SVC,'Authorization':'Bearer '+SB_SVC,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({senha_hash:senhaHash, forcar_troca_senha:true})
+    });
+    if(!r.ok) throw new Error(await r.text());
+    alert(`Senha de ${toTitle(u.nome)} redefinida para: ${SENHA_PADRAO_TEMP}\n\nInforme essa senha à pessoa. Ela será solicitada a criar uma nova no próximo acesso.`);
+    await renderUsuarios();
+  }catch(e){
+    alert('Erro ao resetar a senha do usuário.');
   }
 }
 
