@@ -114,6 +114,8 @@
   .sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:28px}
   .ma-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px}
   .pend-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+  .pend-proj-item{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
+  .pend-proj-item:last-child{padding-bottom:0}
   .utable{width:100%;border-collapse:collapse;font-size:13px}
   .utable th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;padding:8px 10px;border-bottom:2px solid var(--border)}
   .utable td{padding:10px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -1420,11 +1422,35 @@ function pendentesPara(email){
 function renderPendCard(av){
   return `
     <div class="pend-card">
-      <div class="badge" style="margin-bottom:8px">${av.tipo==='projeto'?'📁 Projeto':'👤 Líder'}</div>
+      <div class="badge" style="margin-bottom:8px">👤 Líder</div>
       <div style="font-size:15px;font-weight:700;margin-bottom:2px">${esc(displayNome(av))}</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${av.itens.length} critério(s) para avaliar</div>
       <button class="btn btn-p btn-sm btn-full" onclick="abrirAvaliacao('${av.id}')">Responder →</button>
     </div>`;
+}
+
+function renderPendProjetosAgrupados(list){
+  const grupos={};
+  const ordem=[];
+  list.forEach(av=>{
+    const key=av.projetoLiderEmail||'__sem_responsavel__';
+    if(!grupos[key]){grupos[key]=[];ordem.push(key);}
+    grupos[key].push(av);
+  });
+  return ordem.map(key=>{
+    const nomeLider = key==='__sem_responsavel__' ? 'Sem responsável definido' : nomeAlvoPorKey(key);
+    const projetos = grupos[key];
+    return `
+    <div class="pend-card">
+      <div class="badge" style="margin-bottom:10px">👤 ${esc(nomeLider)}</div>
+      ${projetos.map((av,i)=>`
+        <div class="pend-proj-item"${i===0?' style="border-top:none;padding-top:0"':''}>
+          <div style="font-size:14px;font-weight:700;margin-bottom:2px">📁 ${esc(displayNome(av))}</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${av.itens.length} critério(s) para avaliar</div>
+          <button class="btn btn-p btn-sm btn-full" onclick="abrirAvaliacao('${av.id}')">Responder →</button>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
 }
 
 function renderPendentes(){
@@ -1441,7 +1467,7 @@ function renderPendentes(){
   const elP=document.getElementById('ma-pend-projeto');
   const vazio=`<div class="empty" style="padding:24px 16px"><div class="ic" style="font-size:26px">✅</div><strong style="font-size:13px">Nenhuma pendência</strong></div>`;
   elL.innerHTML = pendLider.length ? pendLider.map(renderPendCard).join('') : vazio;
-  elP.innerHTML = pendProjeto.length ? pendProjeto.map(renderPendCard).join('') : vazio;
+  elP.innerHTML = pendProjeto.length ? renderPendProjetosAgrupados(pendProjeto) : vazio;
 }
 
 function abrirAvaliacao(id){
